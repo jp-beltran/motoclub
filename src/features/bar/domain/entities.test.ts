@@ -46,4 +46,63 @@ describe('bar domain entities', () => {
     expectTypeOf<MonthlyClosing>().toBeObject()
     expectTypeOf<MemberStatement>().toBeObject()
   })
+
+  it('prevents invalid tab and consumption lifecycle combinations', () => {
+    // @ts-expect-error open tabs cannot carry a closing timestamp
+    const openTabWithClosedAt: Tab = {
+      id: 'tab-1',
+      kind: TAB_KIND.MONTHLY,
+      status: TAB_STATUS.OPEN,
+      memberId: 'member-1',
+      month: '2026-09',
+      openedAt: '2026-09-01T12:00:00.000Z',
+      closedAt: '2026-09-02T12:00:00.000Z',
+    }
+    // @ts-expect-error closed tabs require a closing timestamp
+    const closedTabWithoutClosedAt: Tab = {
+      id: 'tab-2',
+      kind: TAB_KIND.MONTHLY,
+      status: TAB_STATUS.CLOSED,
+      memberId: 'member-1',
+      month: '2026-09',
+      openedAt: '2026-09-01T12:00:00.000Z',
+    }
+    // @ts-expect-error active consumption cannot carry cancellation metadata
+    const activeWithCancellation: Consumption = {
+      id: 'consumption-1',
+      tabId: 'tab-1',
+      consumerId: 'member-1',
+      itemId: 'item-1',
+      status: CONSUMPTION_STATUS.ACTIVE,
+      chargeKind: CHARGE_KIND.CHARGED,
+      quantity: 1,
+      unitPriceCents: 600,
+      unitCostCents: 300,
+      createdAt: '2026-09-02T12:00:00.000Z',
+      actorId: 'actor-1',
+      cancelledAt: '2026-09-02T13:00:00.000Z',
+      cancelledByActorId: 'actor-2',
+    }
+    // @ts-expect-error cancelled consumption requires cancellation metadata
+    const cancelledWithoutMetadata: Consumption = {
+      id: 'consumption-2',
+      tabId: 'tab-1',
+      consumerId: 'member-1',
+      itemId: 'item-1',
+      status: CONSUMPTION_STATUS.CANCELLED,
+      chargeKind: CHARGE_KIND.CHARGED,
+      quantity: 1,
+      unitPriceCents: 600,
+      unitCostCents: 300,
+      createdAt: '2026-09-02T12:00:00.000Z',
+      actorId: 'actor-1',
+    }
+
+    expect([
+      openTabWithClosedAt,
+      closedTabWithoutClosedAt,
+      activeWithCancellation,
+      cancelledWithoutMetadata,
+    ]).toHaveLength(4)
+  })
 })

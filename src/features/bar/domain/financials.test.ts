@@ -37,6 +37,8 @@ describe('bar financial rules', () => {
       ...BASE_CONSUMPTION,
       id: 'cancelled-1',
       status: CONSUMPTION_STATUS.CANCELLED,
+      cancelledAt: '2026-09-02T13:00:00.000Z',
+      cancelledByActorId: 'actor-2',
     }
 
     const summary = summarizeTabConsumptions([
@@ -77,5 +79,23 @@ describe('bar financial rules', () => {
       profitCents: -1_200,
       margin: 0,
     })
+  })
+
+  it('rejects revenue totals that overflow safe integer cents', () => {
+    expect(() =>
+      summarizeTabConsumptions([
+        { ...BASE_CONSUMPTION, quantity: 1, unitPriceCents: Number.MAX_SAFE_INTEGER },
+        { ...BASE_CONSUMPTION, id: 'consumption-2', quantity: 1, unitPriceCents: 1 },
+      ]),
+    ).toThrow('Money total exceeds safe integer cents')
+  })
+
+  it('rejects cost totals that overflow safe integer cents', () => {
+    expect(() =>
+      calculateFinancials([
+        { ...BASE_CONSUMPTION, quantity: 1, unitCostCents: Number.MAX_SAFE_INTEGER },
+        { ...BASE_CONSUMPTION, id: 'consumption-2', quantity: 1, unitCostCents: 1 },
+      ]),
+    ).toThrow('Money total exceeds safe integer cents')
   })
 })

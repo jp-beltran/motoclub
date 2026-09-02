@@ -1,5 +1,6 @@
 import { CHARGE_KIND, CONSUMPTION_STATUS } from './constants'
 import type { Consumption } from './entities'
+import { addCents } from './money'
 
 export function getConsumptionLineTotalCents(consumption: Consumption): number {
   return consumption.quantity * consumption.unitPriceCents
@@ -18,7 +19,8 @@ export function summarizeTabConsumptions(consumptions: readonly Consumption[]): 
 
   return {
     totalCents: chargedConsumptions.reduce(
-      (total, consumption) => total + getConsumptionLineTotalCents(consumption),
+      (total, consumption) =>
+        addCents(total, getConsumptionLineTotalCents(consumption)),
       0,
     ),
     courtesyConsumptions: activeConsumptions.filter(
@@ -39,7 +41,7 @@ export function calculateFinancials(consumptions: readonly Consumption[]): {
   const revenueCents = summarizeTabConsumptions(consumptions).totalCents
   const costCents = activeConsumptions.reduce(
     (total, consumption) =>
-      total + consumption.quantity * consumption.unitCostCents,
+      addCents(total, consumption.quantity * consumption.unitCostCents),
     0,
   )
   const profitCents = revenueCents - costCents

@@ -31,40 +31,61 @@ export interface Event {
 
 interface TabBase {
   readonly id: string
-  readonly status: TabStatus
   readonly openedAt: string
-  readonly closedAt?: string
 }
 
-export interface EventTab extends TabBase {
+type TabLifecycle =
+  | {
+      readonly status: Extract<TabStatus, 'open'>
+      readonly closedAt?: never
+    }
+  | {
+      readonly status: Extract<TabStatus, 'closed'>
+      readonly closedAt: string
+    }
+
+interface EventTabDetails {
   readonly kind: Extract<TabKind, 'event'>
   readonly eventId: string
   readonly visitorId: string
 }
 
-export interface MonthlyTab extends TabBase {
+interface MonthlyTabDetails {
   readonly kind: Extract<TabKind, 'monthly'>
   readonly memberId: string
   readonly month: string
 }
 
+export type EventTab = TabBase & TabLifecycle & EventTabDetails
+export type MonthlyTab = TabBase & TabLifecycle & MonthlyTabDetails
 export type Tab = EventTab | MonthlyTab
 
-export interface Consumption {
+interface ConsumptionBase {
   readonly id: string
   readonly tabId: string
   readonly consumerId: string
   readonly itemId: string
-  readonly status: ConsumptionStatus
   readonly chargeKind: ChargeKind
   readonly quantity: number
   readonly unitPriceCents: number
   readonly unitCostCents: number
   readonly createdAt: string
-  readonly cancelledAt?: string
   readonly actorId: string
-  readonly cancelledByActorId?: string
 }
+
+export type ActiveConsumption = ConsumptionBase & {
+  readonly status: Extract<ConsumptionStatus, 'active'>
+  readonly cancelledAt?: never
+  readonly cancelledByActorId?: never
+}
+
+export type CancelledConsumption = ConsumptionBase & {
+  readonly status: Extract<ConsumptionStatus, 'cancelled'>
+  readonly cancelledAt: string
+  readonly cancelledByActorId: string
+}
+
+export type Consumption = ActiveConsumption | CancelledConsumption
 
 export interface Payment {
   readonly id: string

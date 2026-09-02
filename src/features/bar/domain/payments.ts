@@ -1,6 +1,6 @@
 import { PAYMENT_STATUS, type PaymentStatus } from './constants'
 import type { Payment } from './entities'
-import { assertIntegerCents } from './money'
+import { addCents, assertNonNegativeCents, assertPositiveCents } from './money'
 
 export interface PaymentSummary {
   readonly paidCents: number
@@ -12,11 +12,11 @@ export function summarizePayments(
   amountDueCents: number,
   payments: readonly Payment[],
 ): PaymentSummary {
-  assertIntegerCents(amountDueCents)
-  payments.forEach(({ amountCents }) => assertIntegerCents(amountCents))
+  assertNonNegativeCents(amountDueCents)
+  payments.forEach(({ amountCents }) => assertPositiveCents(amountCents))
 
   const paidCents = payments.reduce(
-    (total, currentPayment) => total + currentPayment.amountCents,
+    (total, currentPayment) => addCents(total, currentPayment.amountCents),
     0,
   )
   const remainingCents = Math.max(amountDueCents - paidCents, 0)
