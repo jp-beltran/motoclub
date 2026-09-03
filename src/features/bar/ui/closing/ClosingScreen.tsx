@@ -1,0 +1,257 @@
+import { useMutation } from '@tanstack/react-query'
+
+import { CURRENT_ACTOR_ID } from '../../application/actor'
+import type { BarDatabase } from '../../application/bar-repository'
+import { useBarSnapshot, useInvalidateBar } from '../../application/queries'
+import { useBarRepository } from '../../application/repository-context'
+import { PAYMENT_STATUS, type PaymentStatus } from '../../domain/constants'
+import type { MemberStatement, MonthlyClosing } from '../../domain/entities'
+import { formatMonth, getCurrentMonth } from '../../../../shared/date'
+import { formatCents, formatDateTime, formatQuantity } from '../../../../shared/format'
+import { Button } from '../../../../shared/ui/Button'
+import { Card } from '../../../../shared/ui/Card'
+import { EmptyState } from '../../../../shared/ui/EmptyState'
+import { ChargeMessageCard } from './ChargeMessageCard'
+import { describeClosingError } from './closing-messages'
+import {
+  buildMonthPreview,
+  summarizeClosedStatement,
+  type ClosedMemberStatementView,
+  type ClosingLine,
+  type MemberMonthPreview,
+} from './closing-selectors'
+
+const PAYMENT_STATUS_LABELS: Record<PaymentStatus, string> = {
+  [PAYMENT_STATUS.PAID]: 'Pago',
+  [PAYMENT_STATUS.PARTIAL]: 'Parcial',
+  [PAYMENT_STATUS.UNPAID]: 'Em aberto',
+}
+
+const PAYMENT_STATUS_TEXT_CLASSES: Record<PaymentStatus, string> = {
+  [PAYMENT_STATUS.PAID]: 'text-positive',
+  [PAYMENT_STATUS.PARTIAL]: 'text-warning',
+  [PAYMENT_STATUS.UNPAID]: 'text-content-muted',
+}
+
+/**
+ * `/fechamento`: a live preview of the current month before closing it, and
+ * — once `createMonthlyClosing` has run for that month — the frozen
+ * statements it produced. The screen itself never writes anything; only the
+ * "Fechar mês" mutation does, and it is only reachable while no closing
+ * exists yet for the month.
+ */
+export function ClosingScreen() {
+  const month = getCurrentMonth()
+  const repository = useBarRepository()
+  const invalidateBar = useInvalidateBar()
+  const { data: snapshot, isPending, isError } = useBarSnapshot()
+
+  const createClosing = useMutation({
+    mutationFn: () => repository.createMonthlyClosing({ month, actorId: CURRENT_ACTOR_ID }),
+    onSuccess: () => {
+      invalidateBar()
+    },
+  })
+
+  const closing = snapshot?.monthlyClosings.find((entry) => entry.month === month)
+
+  return (
+    <div className="flex flex-col gap-6">
+      <header>
+        <h1 className="text-2xl font-semibold text-content-primary">Fechamento</h1>
+        <p className="mt-1 text-content-muted">{formatMonth(month)}</p>
+      </header>
+
+      {isPending ? <p className="text-content-muted">Carregando fechamento…</p> : null}
+
+      {isError ? (
+        <EmptyState
+          title="Não foi possível carregar o fechamento"
+          description="Tente novamente em instantes."
+        />
+      ) : null}
+
+      {snapshot && closing ? (
+        <ClosedMonthView snapshot={snapshot} month={month} closing={closing} />
+      ) : null}
+
+      {snapshot && !closing ? (
+        <PreviewMonthView
+          snapshot={snapshot}
+          month={month}
+          onClose={() => createClosing.mutate()}
+          isClosing={createClosing.isPending}
+          errorMessage={
+            createClosing.isError ? describeClosingError(createClosing.error) : undefined
+          }
+        />
+      ) : null}
+    </div>
+  )
+}
+
+interface PreviewMonthViewProps {
+  readonly snapshot: BarDatabase
+  readonly month: string
+  readonly onClose: () => void
+  readonly isClosing: boolean
+  readonly errorMessage?: string
+}
+
+function PreviewMonthView({
+  snapshot,
+  month,
+  onClose,
+  isClosing,
+  errorMessage,
+}: PreviewMonthViewProps) {
+  const preview = buildMonthPreview(snapshot, month)
+
+  return (
+    <div className="flex flex-col gap-4">
+      <Card className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-sm text-content-muted">Situação do mês</p>
+          <p className="text-base font-semibold text-content-primary">
+            Prévia — nada foi salvo ainda.
+          </p>
+        </div>
+        <Button onClick={onClose} disabled={isClosing}>
+          {isClosing ? 'Fechando…' : 'Fechar mês'}
+        </Button>
+      </Card>
+
+      {errorMessage ? (
+        <p role="alert" className="text-sm text-accent">
+          {errorMessage}
+        </p>
+      ) : null}
+
+      {preview.length === 0 ? (
+        <EmptyState
+          title="Nenhum consumo neste mês"
+          description="Nenhum integrante lançou consumo em nome próprio até agora."
+        />
+      ) : (
+        <div className="flex flex-col gap-4">
+          {preview.map((row) => (
+            <MemberPreviewCard key={row.consumer.id} row={row} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function MemberPreviewCard({ row }: { readonly row: MemberMonthPreview }) {
+  return (
+    <Card className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-base font-semibold text-content-primary">{row.consumer.name}</p>
+        <span className="text-sm text-content-muted">Aguardando fechamento</span>
+      </div>
+      <ClosingLineList lines={row.lines} />
+      <p className="text-sm font-medium text-content-primary">
+        Total: {formatCents(row.totalCents)}
+      </p>
+    </Card>
+  )
+}
+
+interface ClosedMonthViewProps {
+  readonly snapshot: BarDatabase
+  readonly month: string
+  readonly closing: MonthlyClosing
+}
+
+function ClosedMonthView({ snapshot, month, closing }: ClosedMonthViewProps) {
+  const statements = closing.statementIds
+    .map((id) => snapshot.memberStatements.find((statement) => statement.id === id))
+    .filter((statement): statement is MemberStatement => Boolean(statement))
+  const summaries = statements
+    .map((statement) => summarizeClosedStatement(snapshot, statement))
+    .filter((summary): summary is ClosedMemberStatementView => Boolean(summary))
+
+  return (
+    <div className="flex flex-col gap-4">
+      <Card className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-sm text-content-muted">Situação do mês</p>
+          <p className="text-base font-semibold text-content-primary">
+            Fechado em {formatDateTime(closing.closedAt)}
+          </p>
+        </div>
+        <Button disabled title="Este mês já foi fechado.">
+          Fechar mês
+        </Button>
+      </Card>
+
+      <p className="text-sm text-content-muted">
+        Este mês já foi fechado e não pode ser fechado novamente. Os extratos abaixo estão
+        congelados e refletem exatamente o que foi consolidado.
+      </p>
+
+      {summaries.length === 0 ? (
+        <EmptyState
+          title="Nenhum extrato neste fechamento"
+          description="Nenhum integrante teve consumo lançado no mês."
+        />
+      ) : (
+        <div className="flex flex-col gap-4">
+          {summaries.map((summary) => (
+            <ClosedStatementCard key={summary.statement.id} summary={summary} month={month} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ClosedStatementCard({
+  summary,
+  month,
+}: {
+  readonly summary: ClosedMemberStatementView
+  readonly month: string
+}) {
+  return (
+    <Card className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-base font-semibold text-content-primary">{summary.consumer.name}</p>
+        <span className={`text-sm font-medium ${PAYMENT_STATUS_TEXT_CLASSES[summary.payment.status]}`}>
+          {PAYMENT_STATUS_LABELS[summary.payment.status]}
+        </span>
+      </div>
+      <ClosingLineList lines={summary.lines} />
+      <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-content-primary">
+        <span>Total: {formatCents(summary.totalCents)}</span>
+        <span>Pago: {formatCents(summary.payment.paidCents)}</span>
+        <span>Restante: {formatCents(summary.payment.remainingCents)}</span>
+      </div>
+      <ChargeMessageCard
+        consumerName={summary.consumer.name}
+        month={month}
+        lines={summary.lines}
+        totalCents={summary.totalCents}
+        paidCents={summary.payment.paidCents}
+        remainingCents={summary.payment.remainingCents}
+      />
+    </Card>
+  )
+}
+
+function ClosingLineList({ lines }: { readonly lines: readonly ClosingLine[] }) {
+  if (lines.length === 0) {
+    return <p className="text-sm text-content-muted">Sem itens cobrados.</p>
+  }
+
+  return (
+    <ul className="flex flex-col gap-1 text-sm text-content-muted">
+      {lines.map((line, index) => (
+        <li key={`${line.itemName}-${index}`}>
+          {formatQuantity(line.quantity)}× {line.itemName} — {formatCents(line.subtotalCents)}
+        </li>
+      ))}
+    </ul>
+  )
+}
