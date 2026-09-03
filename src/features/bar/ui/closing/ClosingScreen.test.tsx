@@ -8,6 +8,11 @@ import type { Consumption, MemberStatement, MonthlyClosing } from '../../domain/
 import type { MonthlyConsolidation } from '../../domain/monthly-closing'
 import { createFakeBarRepository } from '../../../../test/fake-bar-repository'
 import { renderWithBar } from '../../../../test/render-with-bar'
+import {
+  formatPaymentStatusLabel,
+  getPaymentStatusTone,
+} from '../../application/payment-status'
+import { PAYMENT_STATUS } from '../../domain/constants'
 import { formatMonth, getCurrentMonth } from '../../../../shared/date'
 import { ClosingScreen } from './ClosingScreen'
 
@@ -284,6 +289,52 @@ describe('ClosingScreen', () => {
     expect(await screen.findByText(/já foi fechado/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Fechar mês' })).toBeDisabled()
     expect(screen.getByText('Total: R$ 14,00')).toBeInTheDocument()
+  })
+
+  it('shows a frozen statement with the canonical payment label, not a private copy', async () => {
+    const database = baseDatabase()
+    database.monthlyClosings = [{
+      id: 'closing-1', month: MONTH, statementIds: ['statement-ana'],
+      closedAt: isoInMonth(28), actorId: 'admin-demo',
+    }]
+    database.memberStatements = [{
+      id: 'statement-ana', memberId: 'member-ana', month: MONTH,
+      consumptions: [database.consumptions[0]], createdAt: isoInMonth(28),
+    }]
+
+    renderWithBar(<ClosingScreen />, {
+      repository: createFakeBarRepository({}, database),
+    })
+
+    // application/payment-status.ts is the single source: "Não pago", not the
+    // private "Em aberto" this screen used to keep, which had already drifted
+    // in text and in tone from every other screen.
+    expect(await screen.findByText(formatPaymentStatusLabel(PAYMENT_STATUS.UNPAID)))
+      .toHaveClass(getPaymentStatusTone(PAYMENT_STATUS.UNPAID))
+    expect(screen.queryByText('Em aberto')).not.toBeInTheDocument()
+  })
+
+  it('does not bill a statement with nothing chargeable in it', async () => {
+    const database = baseDatabase()
+    const courtesyOnly = consumptionFixture({
+      id: 'c-courtesy', consumerId: 'member-ana', tabId: 'tab-ana',
+      chargeKind: CHARGE_KIND.COURTESY,
+    })
+    database.monthlyClosings = [{
+      id: 'closing-1', month: MONTH, statementIds: ['statement-ana'],
+      closedAt: isoInMonth(28), actorId: 'admin-demo',
+    }]
+    database.memberStatements = [{
+      id: 'statement-ana', memberId: 'member-ana', month: MONTH,
+      consumptions: [courtesyOnly], createdAt: isoInMonth(28),
+    }]
+
+    renderWithBar(<ClosingScreen />, {
+      repository: createFakeBarRepository({}, database),
+    })
+
+    expect(await screen.findByText('Sem valor a cobrar')).toBeInTheDocument()
+    expect(screen.queryByText('Não pago')).not.toBeInTheDocument()
   })
 
   it('cannot close a month that already has a closing, and explains why', async () => {

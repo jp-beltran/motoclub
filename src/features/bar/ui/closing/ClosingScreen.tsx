@@ -5,7 +5,7 @@ import { CURRENT_ACTOR_ID } from '../../application/actor'
 import type { BarDatabase } from '../../application/bar-repository'
 import { useBarSnapshot, useInvalidateBar } from '../../application/queries'
 import { useBarRepository } from '../../application/repository-context'
-import { PAYMENT_STATUS, type PaymentStatus } from '../../domain/constants'
+import { describePaymentStatus } from '../../application/payment-status'
 import type { MemberStatement, MonthlyClosing } from '../../domain/entities'
 import { formatMonth, getCurrentMonth } from '../../../../shared/date'
 import { formatCents, formatDateTime, formatQuantity } from '../../../../shared/format'
@@ -23,18 +23,6 @@ import {
   type ClosingMonthOption,
   type MemberMonthPreview,
 } from './closing-selectors'
-
-const PAYMENT_STATUS_LABELS: Record<PaymentStatus, string> = {
-  [PAYMENT_STATUS.PAID]: 'Pago',
-  [PAYMENT_STATUS.PARTIAL]: 'Parcial',
-  [PAYMENT_STATUS.UNPAID]: 'Em aberto',
-}
-
-const PAYMENT_STATUS_TEXT_CLASSES: Record<PaymentStatus, string> = {
-  [PAYMENT_STATUS.PAID]: 'text-positive',
-  [PAYMENT_STATUS.PARTIAL]: 'text-warning',
-  [PAYMENT_STATUS.UNPAID]: 'text-content-muted',
-}
 
 /**
  * `/fechamento`: a live preview of a month before closing it, and — once
@@ -312,13 +300,18 @@ function ClosedStatementCard({
   readonly summary: ClosedMemberStatementView
   readonly month: string
 }) {
+  // Label and tone come from application/payment-status.ts, shared with
+  // /comandas and /pagamentos. This screen kept a private third copy whose
+  // "Em aberto" had already drifted from the canonical "Não pago", in text
+  // and in tone, and two e2e specs had pinned both spellings of the same
+  // underlying status.
+  const status = describePaymentStatus(summary.payment.status, summary.totalCents)
+
   return (
     <Card className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-base font-semibold text-content-primary">{summary.consumer.name}</p>
-        <span className={`text-sm font-medium ${PAYMENT_STATUS_TEXT_CLASSES[summary.payment.status]}`}>
-          {PAYMENT_STATUS_LABELS[summary.payment.status]}
-        </span>
+        <span className={`text-sm font-medium ${status.toneClass}`}>{status.label}</span>
       </div>
       <ClosingLineList lines={summary.lines} />
       <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-content-primary">

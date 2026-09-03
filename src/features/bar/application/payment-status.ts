@@ -28,3 +28,34 @@ export function formatPaymentStatusLabel(status: PaymentStatus): string {
 export function getPaymentStatusTone(status: PaymentStatus): string {
   return PAYMENT_STATUS_TONE_CLASSES[status]
 }
+
+/** Nothing was ever chargeable here — a courtesy-only tab or statement. */
+export const NOTHING_TO_CHARGE_LABEL = 'Sem valor a cobrar'
+
+const NOTHING_TO_CHARGE_TONE = 'text-content-muted'
+
+export interface PaymentStatusView {
+  readonly label: string
+  readonly toneClass: string
+}
+
+/**
+ * How a payment status should read on screen, given what was actually owed.
+ *
+ * `summarizePayments(0, [])` returns `unpaid`, which is true for the domain —
+ * nothing has been paid — and the repository's payment ceiling depends on
+ * that being so. But rendering it makes a courtesy-only tab appear on
+ * `/comandas` as a red R$ 0,00 debt while `/pagamentos` correctly refuses to
+ * list it: one screen contradicting the other about the same tab. Ruling 29
+ * fixes it here, in the presentation, rather than in the domain: with nothing
+ * to charge, the screen says so instead of reporting a settlement state.
+ */
+export function describePaymentStatus(
+  status: PaymentStatus,
+  amountDueCents: number,
+): PaymentStatusView {
+  if (amountDueCents === 0) {
+    return { label: NOTHING_TO_CHARGE_LABEL, toneClass: NOTHING_TO_CHARGE_TONE }
+  }
+  return { label: formatPaymentStatusLabel(status), toneClass: getPaymentStatusTone(status) }
+}

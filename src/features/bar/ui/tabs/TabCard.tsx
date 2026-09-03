@@ -54,7 +54,7 @@ export function TabCard({
           <p className="font-semibold text-content-primary">{consumer.name}</p>
           <div className="mt-1 flex flex-wrap items-center gap-3">
             <TabStatusBadge status={tab.status} />
-            <PaymentStatusBadge status={payment.status} />
+            <PaymentStatusBadge status={payment.status} amountDueCents={totalCents} />
           </div>
         </div>
         <p className="text-lg font-semibold text-content-primary">{formatCents(totalCents)}</p>

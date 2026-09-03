@@ -70,7 +70,9 @@ test('closes the month and shows each member charge preview, frozen after closin
   await expect(anaClosed).toContainText('Total: R$ 21,00')
   await expect(anaClosed).toContainText('Pago: R$ 0,00')
   await expect(anaClosed).toContainText('Restante: R$ 21,00')
-  await expect(anaClosed).toContainText('Em aberto')
+  // The canonical label from application/payment-status.ts; this screen
+  // used to keep a private copy that said "Em aberto" instead.
+  await expect(anaClosed).toContainText('Não pago')
 
   const brunoClosed = cardMatching(page, ['Bruno Santos', 'Restante:'])
   await expect(brunoClosed).toContainText('Total: R$ 24,00')

@@ -210,3 +210,30 @@ describe('TabCard', () => {
     expect(onStartReopen).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('TabCard with nothing to charge', () => {
+  it('does not bill a courtesy-only tab as unpaid', () => {
+    // The seed's Juliana tab: one courtesy, R$ 0,00 due. /pagamentos rightly
+    // does not list it, so /comandas must not show it in red as a debt.
+    render(
+      <TabCard
+        summary={makeSummary({
+          lines: [],
+          courtesyLines: [
+            { itemId: 'item-agua', itemName: 'Água mineral', quantity: 1, unitPriceCents: 400, subtotalCents: 400 },
+          ],
+          totalCents: 0,
+          payment: { paidCents: 0, remainingCents: 0, status: PAYMENT_STATUS.UNPAID },
+        })}
+        eventActive
+        onClose={vi.fn()}
+        onReopen={vi.fn()}
+        isClosePending={false}
+        isReopenPending={false}
+      />,
+    )
+
+    expect(screen.getByText('Sem valor a cobrar')).toBeInTheDocument()
+    expect(screen.queryByText('Não pago')).not.toBeInTheDocument()
+  })
+})
