@@ -163,7 +163,7 @@ describe('summarizeDashboard', () => {
       expect(summary.margin).toBe(0)
     })
 
-    it('keeps a cancelled consumption out of revenue, cost and margin', () => {
+    it('keeps a cancelled consumption out of revenue, cost, margin, received and pending — outside everything', () => {
       const db = emptyDatabase()
       db.tabs = [monthlyTab({ id: 'tab-1', memberId: 'member-1', month: MONTH })]
       db.consumptions = [
@@ -188,6 +188,11 @@ describe('summarizeDashboard', () => {
       expect(summary.costCents).toBe(0)
       expect(summary.profitCents).toBe(0)
       expect(summary.margin).toBe(0)
+      // A cancelled consumption is outside everything, including payment
+      // state: it never generates a due amount, so it contributes nothing to
+      // either side of the money owed/received split.
+      expect(summary.receivedCents).toBe(0)
+      expect(summary.pendingCents).toBe(0)
     })
 
     it("scopes revenue by each consumption's own month regardless of its tab kind (replaces the forward-leakage bug)", () => {
