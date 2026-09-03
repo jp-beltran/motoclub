@@ -1,5 +1,6 @@
 import { useMutation } from '@tanstack/react-query'
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 
 import { EmptyState } from '../../../../shared/ui/EmptyState'
 import { CURRENT_ACTOR_ID } from '../../application/actor'
@@ -46,6 +47,20 @@ export function PagamentosView() {
           o que ainda está em aberto.
         </p>
       </header>
+
+      <div className="flex flex-col gap-2 rounded-md border border-border-subtle bg-surface-raised p-3">
+        <p className="text-sm text-content-muted">
+          O saldo de integrantes referente ao mês corrente ainda não aparece aqui: ele só vira
+          pendência de pagamento depois do fechamento mensal, quando o extrato do integrante é
+          gerado.
+        </p>
+        <Link
+          to="/fechamento"
+          className="inline-flex w-fit min-h-11 items-center text-sm font-medium text-accent underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+        >
+          Ir para o fechamento mensal
+        </Link>
+      </div>
 
       {snapshotQuery.isPending ? (
         <p className="text-content-muted">Carregando pendências…</p>
