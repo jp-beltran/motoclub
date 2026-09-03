@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
 import { CHARGE_KIND, CONSUMPTION_STATUS } from './constants'
-import type { Consumption } from './entities'
+import type { Consumption, Item } from './entities'
 import {
   calculateFinancials,
   getConsumptionLineTotalCents,
+  getItemMarginRatio,
   summarizeTabConsumptions,
 } from './financials'
 
@@ -107,5 +108,36 @@ describe('bar financial rules', () => {
         { ...BASE_CONSUMPTION, id: 'consumption-2', quantity: 1, unitCostCents: 1 },
       ]),
     ).toThrow('Money total exceeds safe integer cents')
+  })
+})
+
+const BASE_ITEM: Item = {
+  id: 'item-1',
+  name: 'Cerveja lata',
+  unitCostCents: 350,
+  unitPriceCents: 700,
+}
+
+describe('getItemMarginRatio', () => {
+  it('calculates the margin ratio between unit price and unit cost', () => {
+    expect(getItemMarginRatio(BASE_ITEM)).toBe((700 - 350) / 700)
+  })
+
+  it('returns zero margin when the sale price equals the cost', () => {
+    expect(
+      getItemMarginRatio({ ...BASE_ITEM, unitCostCents: 700, unitPriceCents: 700 }),
+    ).toBe(0)
+  })
+
+  it('returns zero margin when the sale price is zero', () => {
+    expect(
+      getItemMarginRatio({ ...BASE_ITEM, unitCostCents: 350, unitPriceCents: 0 }),
+    ).toBe(0)
+  })
+
+  it('returns a negative margin when the cost exceeds the sale price', () => {
+    expect(
+      getItemMarginRatio({ ...BASE_ITEM, unitCostCents: 900, unitPriceCents: 700 }),
+    ).toBe((700 - 900) / 700)
   })
 })
