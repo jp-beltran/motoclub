@@ -1,6 +1,8 @@
 import { useState } from 'react'
 
 import { getActiveEvent } from '../../application/active-event'
+import { getResolvedTab, resolveConsumerTab } from '../../application/consumer-tab'
+import { describeRepositoryError } from '../../application/error-messages'
 import { useBarSnapshot } from '../../application/queries'
 import { summarizeTab } from '../../application/tab-summary'
 import { CHARGE_KIND, STOCK_WARNING, type ChargeKind } from '../../domain/constants'
@@ -10,8 +12,6 @@ import { ItemStep } from './ItemStep'
 import { LaunchFeedback } from './LaunchFeedback'
 import { RecentLaunches } from './RecentLaunches'
 import { TabPanel } from './TabPanel'
-import { getResolvedTab, resolveConsumerTab } from '../../application/consumer-tab'
-import { describeRepositoryError } from '../../application/error-messages'
 import {
   useCancelConsumption,
   useEditConsumptionQuantity,
