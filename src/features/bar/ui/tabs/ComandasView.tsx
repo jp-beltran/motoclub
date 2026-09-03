@@ -47,6 +47,8 @@ export function ComandasView() {
           snapshot={snapshotQuery.data}
           onClose={(tabId) => closeMutation.mutate(tabId)}
           onReopen={(tabId) => reopenMutation.mutate(tabId)}
+          onStartClose={() => closeMutation.reset()}
+          onStartReopen={() => reopenMutation.reset()}
           closePendingTabId={closeMutation.isPending ? closeMutation.variables : undefined}
           reopenPendingTabId={reopenMutation.isPending ? reopenMutation.variables : undefined}
           closeErrorTabId={closeMutation.isError ? closeMutation.variables : undefined}
@@ -63,6 +65,8 @@ interface TabGroupsProps {
   readonly snapshot: NonNullable<ReturnType<typeof useBarSnapshot>['data']>
   readonly onClose: (tabId: string) => void
   readonly onReopen: (tabId: string) => void
+  readonly onStartClose: () => void
+  readonly onStartReopen: () => void
   readonly closePendingTabId?: string
   readonly reopenPendingTabId?: string
   readonly closeErrorTabId?: string
@@ -75,6 +79,8 @@ function TabGroups({
   snapshot,
   onClose,
   onReopen,
+  onStartClose,
+  onStartReopen,
   closePendingTabId,
   reopenPendingTabId,
   closeErrorTabId,
@@ -88,7 +94,7 @@ function TabGroups({
     return (
       <EmptyState
         title="Nenhuma comanda de evento"
-        description="Ainda não há comanda de visitante aberta para nenhum evento."
+        description="Ainda não há comanda de visitante para nenhum evento."
       />
     )
   }
@@ -106,6 +112,8 @@ function TabGroups({
                 eventActive={isEventActive(group.event)}
                 onClose={onClose}
                 onReopen={onReopen}
+                onStartClose={onStartClose}
+                onStartReopen={onStartReopen}
                 isClosePending={closePendingTabId === summary.tab.id}
                 isReopenPending={reopenPendingTabId === summary.tab.id}
                 closeErrorMessage={

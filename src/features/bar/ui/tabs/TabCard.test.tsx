@@ -171,4 +171,42 @@ describe('TabCard', () => {
     expect(alert).toHaveTextContent('Só é possível fechar ou reabrir comandas de um evento ativo.')
     expect(screen.getByRole('button', { name: 'Confirmar fechamento' })).toBeInTheDocument()
   })
+
+  it('notifies the parent when opening the close confirmation, so a stale error can be cleared', async () => {
+    const onStartClose = vi.fn()
+    const user = userEvent.setup()
+    render(
+      <TabCard
+        summary={makeSummary()}
+        eventActive
+        onClose={vi.fn()}
+        onReopen={vi.fn()}
+        isClosePending={false}
+        isReopenPending={false}
+        onStartClose={onStartClose}
+      />,
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Fechar comanda' }))
+    expect(onStartClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('notifies the parent when opening the reopen confirmation, so a stale error can be cleared', async () => {
+    const onStartReopen = vi.fn()
+    const user = userEvent.setup()
+    render(
+      <TabCard
+        summary={makeSummary({ tab: { ...makeSummary().tab, status: TAB_STATUS.CLOSED, closedAt: '2026-09-19T22:00:00.000Z' } })}
+        eventActive
+        onClose={vi.fn()}
+        onReopen={vi.fn()}
+        isClosePending={false}
+        isReopenPending={false}
+        onStartReopen={onStartReopen}
+      />,
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Reabrir comanda' }))
+    expect(onStartReopen).toHaveBeenCalledTimes(1)
+  })
 })
