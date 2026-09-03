@@ -4,10 +4,13 @@ import { cardMatching, resetDemoDatabase } from './test-utils'
 
 /**
  * Running the monthly closing: the live preview before closing matches each
- * member's seeded consumption, closing freezes it into per-member
- * statements with a charge message, and — the domain rule this flow has to
- * respect — the closing also closes that month's monthly tabs, so a member
- * can no longer receive new consumption afterwards.
+ * member's seeded consumption, the closing requires an explicit two-step
+ * confirmation because it is irreversible (it freezes the month into
+ * statements and closes every member's monthly tab, with no reopen path),
+ * closing freezes it into per-member statements with a charge message, and
+ * — the domain rule this flow has to respect — the closing also closes
+ * that month's monthly tabs, so a member can no longer receive new
+ * consumption afterwards.
  */
 test('closes the month and shows each member charge preview, frozen after closing', async ({
   page,
@@ -31,7 +34,28 @@ test('closes the month and shows each member charge preview, frozen after closin
 
   await expect(page.getByText('Célia Martins')).toHaveCount(0)
 
+  // The first click on "Fechar mês" only opens an in-place confirmation —
+  // it must not perform the closing yet. This is the operator's last
+  // chance to back out of an action that is otherwise irreversible.
   await page.getByRole('button', { name: 'Fechar mês' }).click()
+  await expect(
+    page.getByText(
+      'Confirma o fechamento de setembro de 2026? Esta ação é irreversível: as comandas mensais dos integrantes serão fechadas e o consumo do mês será congelado em extratos individuais.',
+    ),
+  ).toBeVisible()
+  // Nothing was saved yet: the member preview cards are still the live
+  // (unfrozen) preview, not a closed statement — only the "Fechar mês"
+  // trigger itself is swapped for the confirm box. Cancelling must return
+  // to that exact same preview.
+  await expect(page.getByRole('button', { name: 'Confirmar fechamento' })).toBeVisible()
+  await page.getByRole('button', { name: 'Cancelar' }).click()
+  await expect(page.getByRole('button', { name: 'Fechar mês' })).toBeVisible()
+  await expect(page.getByText('Prévia — nada foi salvo ainda.')).toBeVisible()
+  await expect(anaPreview).toContainText('Total: R$ 21,00')
+
+  // Now actually confirm it.
+  await page.getByRole('button', { name: 'Fechar mês' }).click()
+  await page.getByRole('button', { name: 'Confirmar fechamento' }).click()
 
   // Once closed, the screen shows frozen statements instead of a preview,
   // and closing again is not offered.
