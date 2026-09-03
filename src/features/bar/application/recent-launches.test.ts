@@ -18,7 +18,7 @@ const TODAY = new Date(2026, 8, 19, 21, 0)
 function launch(id: string, createdAt: Date, overrides: Partial<Consumption> = {}): Consumption {
   return {
     id,
-    tabId: 'tab-ana-2026-09',
+    tabId: 'tab-ana-mensal',
     consumerId: 'member-ana',
     itemId: 'item-cerveja',
     status: CONSUMPTION_STATUS.ACTIVE,
@@ -101,7 +101,7 @@ describe('listRecentLaunches', () => {
     const snapshot = withConsumptions([launch('c1', new Date(2026, 8, 19, 10, 0))])
 
     expect(listRecentLaunches(snapshot, TODAY)[0].tab).toMatchObject({
-      id: 'tab-ana-2026-09', kind: TAB_KIND.MONTHLY, status: TAB_STATUS.OPEN,
+      id: 'tab-ana-mensal', kind: TAB_KIND.MONTHLY, status: TAB_STATUS.OPEN,
     })
   })
 
@@ -135,7 +135,7 @@ describe('listRecentLaunches cancellation blocks', () => {
   it('marks a launch whose tab is already closed', () => {
     const snapshot = withConsumptions([launch('cons-closed', new Date(2026, 8, 19, 20, 0))])
     snapshot.tabs = snapshot.tabs.map((tab) =>
-      tab.id === 'tab-ana-2026-09'
+      tab.id === 'tab-ana-mensal'
         ? { ...tab, status: TAB_STATUS.CLOSED, closedAt: '2026-09-30T23:00:00.000Z' }
         : tab,
     )

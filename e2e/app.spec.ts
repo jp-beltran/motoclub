@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test'
 
+import { ACTIVE_EVENT_NAME } from './test-utils'
+
 test('renders the dark shell with the demo active event at the dashboard route', async ({
   page,
 }) => {
@@ -10,7 +12,7 @@ test('renders the dark shell with the demo active event at the dashboard route',
   // so they also prove the repository loaded rather than just the route.
   await expect(page.getByText('Consumo do mês')).toBeVisible()
   await expect(page.getByText('Comandas abertas')).toBeVisible()
-  await expect(page.getByText('Encontro de setembro')).toBeVisible()
+  await expect(page.getByText(ACTIVE_EVENT_NAME)).toBeVisible()
   await expect(page.getByText('Gestor')).toBeVisible()
 })
 

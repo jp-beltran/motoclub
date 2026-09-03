@@ -22,7 +22,7 @@ const RAFAEL = { id: 'visitor-rafael', name: 'Rafael Oliveira', kind: CONSUMER_K
 
 function consumption(overrides: Partial<Consumption> & { readonly id: string }): Consumption {
   return {
-    tabId: 'tab-ana-2026-09',
+    tabId: 'tab-ana-mensal',
     consumerId: ANA.id,
     itemId: CERVEJA.id,
     status: CONSUMPTION_STATUS.ACTIVE,
@@ -54,7 +54,7 @@ function database(overrides: Partial<BarDatabase> = {}): BarDatabase {
 describe('getConsumerOutstandingCents', () => {
   it("sums a member's open monthly tab total", () => {
     const tab: Tab = {
-      id: 'tab-ana-2026-09', kind: TAB_KIND.MONTHLY, status: TAB_STATUS.OPEN,
+      id: 'tab-ana-mensal', kind: TAB_KIND.MONTHLY, status: TAB_STATUS.OPEN,
       memberId: ANA.id, month: '2026-09', openedAt: '2026-09-01T12:00:00.000Z',
     }
     const snapshot = database({
@@ -100,7 +100,7 @@ describe('getConsumerOutstandingCents', () => {
 
   it("adds up a member's debt across several months at once", () => {
     const openTab: Tab = {
-      id: 'tab-ana-2026-09', kind: TAB_KIND.MONTHLY, status: TAB_STATUS.OPEN,
+      id: 'tab-ana-mensal', kind: TAB_KIND.MONTHLY, status: TAB_STATUS.OPEN,
       memberId: ANA.id, month: '2026-09', openedAt: '2026-09-01T12:00:00.000Z',
     }
     const statement: MemberStatement = {
@@ -141,7 +141,7 @@ describe('getConsumerOutstandingCents', () => {
 
   it('excludes cancelled and courtesy consumption from the monthly total', () => {
     const tab: Tab = {
-      id: 'tab-ana-2026-09', kind: TAB_KIND.MONTHLY, status: TAB_STATUS.OPEN,
+      id: 'tab-ana-mensal', kind: TAB_KIND.MONTHLY, status: TAB_STATUS.OPEN,
       memberId: ANA.id, month: '2026-09', openedAt: '2026-09-01T12:00:00.000Z',
     }
     const snapshot = database({
@@ -164,7 +164,7 @@ describe('getConsumerOutstandingCents', () => {
       'monthly tab, once the month has been closed',
     () => {
       const closedTab: Tab = {
-        id: 'tab-ana-2026-09', kind: TAB_KIND.MONTHLY, status: TAB_STATUS.CLOSED,
+        id: 'tab-ana-mensal', kind: TAB_KIND.MONTHLY, status: TAB_STATUS.CLOSED,
         memberId: ANA.id, month: '2026-09', openedAt: '2026-09-01T12:00:00.000Z',
         closedAt: '2026-10-01T00:00:00.000Z',
       }

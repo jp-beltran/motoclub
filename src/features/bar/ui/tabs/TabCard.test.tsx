@@ -15,7 +15,7 @@ function makeSummary(overrides: Partial<TabSummary> = {}): TabSummary {
   return {
     tab: {
       id: 'tab-rafael', kind: TAB_KIND.EVENT, status: TAB_STATUS.OPEN,
-      eventId: 'event-setembro', visitorId: 'visitor-rafael',
+      eventId: 'event-encontro', visitorId: 'visitor-rafael',
       openedAt: '2026-09-19T18:20:00.000Z',
     },
     consumer: { id: 'visitor-rafael', name: 'Rafael Oliveira', kind: CONSUMER_KIND.VISITOR },

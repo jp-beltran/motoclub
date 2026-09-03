@@ -6,6 +6,7 @@ import { MemoryRouter } from 'react-router-dom'
 
 import type { BarRepository } from '../features/bar/application/bar-repository'
 import { BarRepositoryProvider } from '../features/bar/application/repository-context'
+import { formatMonth, getCurrentMonth } from '../shared/date'
 import { createFakeBarRepository } from '../test/fake-bar-repository'
 import { DashboardPage } from './DashboardPage'
 
@@ -29,7 +30,7 @@ describe('DashboardPage', () => {
     render(<DashboardPage />, { wrapper: createWrapper(repository) })
 
     expect(screen.getByRole('heading', { name: 'Painel' })).toBeInTheDocument()
-    expect(screen.getByText('setembro de 2026')).toBeInTheDocument()
+    expect(screen.getByText(formatMonth(getCurrentMonth()))).toBeInTheDocument()
   })
 
   it('renders the six financial indicators computed from the demo snapshot for the current month', async () => {

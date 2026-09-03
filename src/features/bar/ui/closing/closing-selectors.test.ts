@@ -46,7 +46,7 @@ function emptyDatabase(): BarDatabase {
 
 function consumption(overrides: Partial<Consumption> & { readonly id: string }): Consumption {
   return {
-    tabId: 'tab-ana-2026-09',
+    tabId: 'tab-ana-mensal',
     consumerId: 'member-ana',
     itemId: 'item-cerveja',
     status: CONSUMPTION_STATUS.ACTIVE,
@@ -236,7 +236,7 @@ describe('summarizeClosedStatement', () => {
     const database = statementDatabase()
     database.payments = [
       {
-        id: 'payment-1', target: PAYMENT_TARGET.TAB, targetId: 'tab-ana-2026-09',
+        id: 'payment-1', target: PAYMENT_TARGET.TAB, targetId: 'tab-ana-mensal',
         amountCents: 500, paidAt: '2026-10-02T12:00:00.000Z', actorId: 'admin-demo',
       },
       {
@@ -303,7 +303,7 @@ describe('listClosingMonths', () => {
     snapshot.consumers = [ANA]
     snapshot.tabs = [monthlyTabFor('2026-09')]
     snapshot.consumptions = [
-      consumption({ id: 'c1', tabId: 'tab-ana-2026-09', createdAt: SEPTEMBER_INSTANT }),
+      consumption({ id: 'c1', tabId: 'tab-ana-mensal', createdAt: SEPTEMBER_INSTANT }),
     ]
 
     expect(listClosingMonths(snapshot, '2026-10')).toEqual([
@@ -348,8 +348,8 @@ describe('listClosingMonths', () => {
     snapshot.tabs = [monthlyTabFor('2026-08'), monthlyTabFor('2026-09')]
     snapshot.consumptions = [
       consumption({ id: 'c1', tabId: 'tab-ana-2026-08', createdAt: AUGUST_INSTANT }),
-      consumption({ id: 'c2', tabId: 'tab-ana-2026-09', createdAt: SEPTEMBER_INSTANT }),
-      consumption({ id: 'c3', tabId: 'tab-ana-2026-09', createdAt: localIso(2026, 8, 15) }),
+      consumption({ id: 'c2', tabId: 'tab-ana-mensal', createdAt: SEPTEMBER_INSTANT }),
+      consumption({ id: 'c3', tabId: 'tab-ana-mensal', createdAt: localIso(2026, 8, 15) }),
     ]
 
     expect(listClosingMonths(snapshot, MONTH).map(({ month }) => month)).toEqual([

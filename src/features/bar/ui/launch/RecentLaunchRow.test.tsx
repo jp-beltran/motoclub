@@ -15,7 +15,7 @@ import type { ActiveConsumption, Tab } from '../../domain/entities'
 import { RecentLaunchRow } from './RecentLaunchRow'
 
 const TAB: Tab = {
-  id: 'tab-ana-2026-09',
+  id: 'tab-ana-mensal',
   kind: TAB_KIND.MONTHLY,
   status: TAB_STATUS.OPEN,
   memberId: 'member-ana',

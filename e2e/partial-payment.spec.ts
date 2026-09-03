@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-import { cardMatching, resetDemoDatabase } from './test-utils'
+import { CURRENT_MONTH_LABEL, cardMatching, resetDemoDatabase } from './test-utils'
 
 /**
  * A member's debt is only payable through the statement the monthly
@@ -30,7 +30,7 @@ test('a partial payment on a member statement leaves the right remaining balance
   // descendant, and only one row can be expanded at a time (PagamentosView
   // keeps a single `expandedKey`), so the form itself is addressed
   // unscoped below without becoming ambiguous.
-  const anaRow = cardMatching(page, ['Ana Paula — setembro de 2026', 'Total'])
+  const anaRow = cardMatching(page, [`Ana Paula — ${CURRENT_MONTH_LABEL}`, 'Total'])
   await expect(anaRow).toContainText('Não pago')
   await expect(anaRow).toContainText('R$ 21,00')
 
@@ -47,7 +47,7 @@ test('a partial payment on a member statement leaves the right remaining balance
 
   // The payment is real persisted money, not UI-only state.
   await page.reload()
-  const anaRowAfterReload = cardMatching(page, ['Ana Paula — setembro de 2026', 'Total'])
+  const anaRowAfterReload = cardMatching(page, [`Ana Paula — ${CURRENT_MONTH_LABEL}`, 'Total'])
   await expect(anaRowAfterReload).toContainText('Parcial')
   await expect(anaRowAfterReload).toContainText('R$ 11,00')
 })

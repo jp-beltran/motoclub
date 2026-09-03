@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-import { cardMatching, resetDemoDatabase } from './test-utils'
+import { CURRENT_MONTH_LABEL, cardMatching, resetDemoDatabase } from './test-utils'
 
 /**
  * Running the monthly closing: the live preview before closing matches each
@@ -40,7 +40,9 @@ test('closes the month and shows each member charge preview, frozen after closin
   await page.getByRole('button', { name: 'Fechar mês' }).click()
   await expect(
     page.getByText(
-      'Confirma o fechamento de setembro de 2026? Esta ação é irreversível: as comandas mensais dos integrantes serão fechadas e o consumo do mês será congelado em extratos individuais.',
+      `Confirma o fechamento de ${CURRENT_MONTH_LABEL}? Esta ação é irreversível: as comandas ` +
+        'mensais dos integrantes serão fechadas e o consumo do mês será congelado em extratos ' +
+        'individuais.',
     ),
   ).toBeVisible()
   // Nothing was saved yet: the member preview cards are still the live
@@ -78,7 +80,7 @@ test('closes the month and shows each member charge preview, frozen after closin
   // Ana can no longer receive new consumption — the launch screen must say
   // so instead of letting the operator tap an item.
   await page.goto('/lancamentos')
-  await page.getByRole('button', { name: 'Ana Paula' }).click()
+  await page.getByRole('button', { name: /^Ana Paula/ }).click()
   await expect(page.getByRole('alert')).toContainText('A comanda mensal deste integrante já foi fechada')
   await expect(page.getByRole('button', { name: 'Lançar Cerveja lata' })).toHaveCount(0)
 
