@@ -1,8 +1,5 @@
+import { CatalogView } from '../features/bar/ui/catalog/CatalogView'
+
 export function ItensPage() {
-  return (
-    <div>
-      <h1 className="text-2xl font-semibold text-content-primary">Itens</h1>
-      <p className="mt-2 text-content-muted">Em construção.</p>
-    </div>
-  )
+  return <CatalogView />
 }
