@@ -1,5 +1,5 @@
 import { CHARGE_KIND, CONSUMPTION_STATUS } from './constants'
-import type { Consumption } from './entities'
+import type { Consumption, Item } from './entities'
 import { addCents, multiplyCents } from './money'
 
 export function getConsumptionLineTotalCents(consumption: Consumption): number {
@@ -52,4 +52,9 @@ export function calculateFinancials(consumptions: readonly Consumption[]): {
     profitCents,
     margin: revenueCents === 0 ? 0 : profitCents / revenueCents,
   }
+}
+
+export function getItemMarginRatio(item: Item): number {
+  if (item.unitPriceCents === 0) return 0
+  return (item.unitPriceCents - item.unitCostCents) / item.unitPriceCents
 }
