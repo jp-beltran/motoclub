@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useInvalidateBar } from '../../application/queries'
 import { useBarRepository } from '../../application/repository-context'
 import type { Consumer } from '../../domain/entities'
-import { describeLaunchError } from '../launch/launch-messages'
+import { describeRepositoryError } from '../../application/error-messages'
 import { Button } from '../../../../shared/ui/Button'
 
 const MISSING_NAME_MESSAGE = 'Informe o nome do visitante.'
@@ -45,7 +45,7 @@ export function VisitorQuickForm({ onCreated, onCancel }: VisitorQuickFormProps)
 
   const errorMessage =
     validationMessage ??
-    (createVisitor.isError ? describeLaunchError(createVisitor.error) : undefined)
+    (createVisitor.isError ? describeRepositoryError(createVisitor.error) : undefined)
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()

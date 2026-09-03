@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest'
 
-import type { BarDatabase } from '../../application/bar-repository'
+import type { BarDatabase } from './bar-repository'
 import {
   CONSUMER_KIND,
   EVENT_STATUS,
   TAB_KIND,
   TAB_STATUS,
-} from '../../domain/constants'
-import type { Consumer, Tab } from '../../domain/entities'
-import { createDemoDatabase } from '../../infrastructure/demo-seed'
+} from '../domain/constants'
+import type { Consumer, Tab } from '../domain/entities'
+import { createDemoDatabase } from '../infrastructure/demo-seed'
 import { listReassignTargets, resolveConsumerTab } from './consumer-tab'
 
 const ANA: Consumer = {

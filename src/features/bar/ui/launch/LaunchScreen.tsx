@@ -10,8 +10,8 @@ import { ItemStep } from './ItemStep'
 import { LaunchFeedback } from './LaunchFeedback'
 import { RecentLaunches } from './RecentLaunches'
 import { TabPanel } from './TabPanel'
-import { resolveConsumerTab } from './consumer-tab'
-import { describeLaunchError } from './launch-messages'
+import { resolveConsumerTab } from '../../application/consumer-tab'
+import { describeRepositoryError } from '../../application/error-messages'
 import {
   useCancelConsumption,
   useEditConsumptionQuantity,
@@ -83,7 +83,7 @@ export function LaunchScreen() {
           })
         },
         onError: (error) => {
-          setFeedback({ message: describeLaunchError(error), tone: 'error' })
+          setFeedback({ message: describeRepositoryError(error), tone: 'error' })
         },
       },
     )
@@ -95,7 +95,7 @@ export function LaunchScreen() {
         setFeedback({ message: 'Lançamento desfeito.', tone: 'success' })
       },
       onError: (error) => {
-        setFeedback({ message: describeLaunchError(error), tone: 'error' })
+        setFeedback({ message: describeRepositoryError(error), tone: 'error' })
       },
     })
   }
@@ -111,7 +111,7 @@ export function LaunchScreen() {
           })
         },
         onError: (error) => {
-          setFeedback({ message: describeLaunchError(error), tone: 'error' })
+          setFeedback({ message: describeRepositoryError(error), tone: 'error' })
         },
       },
     )
@@ -129,7 +129,7 @@ export function LaunchScreen() {
           })
         },
         onError: (error) => {
-          setFeedback({ message: describeLaunchError(error), tone: 'error' })
+          setFeedback({ message: describeRepositoryError(error), tone: 'error' })
         },
       },
     )
@@ -141,7 +141,7 @@ export function LaunchScreen() {
         setFeedback({ message: 'Lançamento cancelado.', tone: 'success' })
       },
       onError: (error) => {
-        setFeedback({ message: describeLaunchError(error), tone: 'error' })
+        setFeedback({ message: describeRepositoryError(error), tone: 'error' })
       },
     })
   }

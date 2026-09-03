@@ -1,55 +1,39 @@
 import { describe, expect, it } from 'vitest'
 
-import { LAUNCH_BLOCK_MESSAGES, describeLaunchError } from './launch-messages'
+import type { LaunchBlockReason } from '../../application/consumer-tab'
+import { LAUNCH_BLOCK_MESSAGES } from './launch-messages'
+
+/**
+ * Exhaustive by construction: this is a `Record` over the whole union with no
+ * cast, so adding a `LaunchBlockReason` without listing it here stops the
+ * build — and `LAUNCH_BLOCK_MESSAGES` has the same key type, so a new reason
+ * cannot ship without copy for it.
+ */
+const EVERY_REASON: Record<LaunchBlockReason, true> = {
+  'no-active-event': true,
+  'monthly-tab-closed': true,
+  'event-tab-closed': true,
+}
 
 describe('LAUNCH_BLOCK_MESSAGES', () => {
-  it('explains a closed monthly tab and points at the way out', () => {
-    expect(LAUNCH_BLOCK_MESSAGES['monthly-tab-closed']).toBe(
-      'A comanda mensal deste integrante já foi fechada. ' +
-        'Lançamentos deste mês não são mais aceitos — o saldo é cobrado no extrato.',
+  it('covers every launch block reason and nothing else', () => {
+    expect(Object.keys(LAUNCH_BLOCK_MESSAGES).sort()).toEqual(
+      Object.keys(EVERY_REASON).sort(),
     )
   })
 
-  it('explains that only visitors depend on an active event', () => {
-    expect(LAUNCH_BLOCK_MESSAGES['no-active-event']).toBe(
-      'Nenhum evento ativo. Visitantes só recebem consumo durante um evento; ' +
-        'integrantes continuam disponíveis.',
-    )
+  it('gives each reason its own non-empty explanation', () => {
+    const messages = Object.values(LAUNCH_BLOCK_MESSAGES)
+
+    expect(messages.every((message) => message.trim().length > 0)).toBe(true)
+    expect(new Set(messages).size).toBe(messages.length)
   })
 
-  it('explains a closed visitor tab', () => {
-    expect(LAUNCH_BLOCK_MESSAGES['event-tab-closed']).toBe(
-      'A comanda deste visitante está fechada. Reabra a comanda para lançar consumo.',
-    )
-  })
-})
-
-describe('describeLaunchError', () => {
-  it.each([
-    ['Cannot add consumption to a closed tab', 'Esta comanda está fechada e não aceita novos lançamentos.'],
-    ['Event must be active', 'O evento desta comanda não está ativo.'],
-    ['Monthly tab month must match the current month', 'A comanda mensal só pode ser aberta no mês corrente.'],
-    ['Consumer must be an active member', 'O consumidor precisa ser um integrante ativo.'],
-    ['Consumer must be an active visitor', 'O consumidor precisa ser um visitante ativo.'],
-    ['Target tab must be open and compatible', 'A comanda de destino precisa estar aberta e ser do mesmo tipo.'],
-    ['Only active consumption can be reassigned', 'Só é possível mover um lançamento ativo.'],
-    ['Only active consumption can be cancelled', 'Este lançamento já foi cancelado.'],
-    ['Quantity must be a positive integer', 'A quantidade precisa ser um número inteiro maior que zero.'],
-    ['Consumption quantity must be a positive safe integer', 'A quantidade precisa ser um número inteiro maior que zero.'],
-    ['Visitor name is required', 'Informe o nome do visitante.'],
-  ])('translates %s', (message, expected) => {
-    expect(describeLaunchError(new Error(message))).toBe(expected)
-  })
-
-  it('falls back to a readable message for an unmapped failure', () => {
-    expect(describeLaunchError(new Error('Item not found'))).toBe(
-      'Não foi possível concluir a operação. Tente novamente.',
-    )
-  })
-
-  it('falls back for a value that is not an error at all', () => {
-    expect(describeLaunchError('boom')).toBe(
-      'Não foi possível concluir a operação. Tente novamente.',
-    )
+  it('tells the operator what to do, not just that it failed', () => {
+    // Each message has to name the way forward, so the operator is never left
+    // at a dead end: another consumer, the statement, or reopening the tab.
+    expect(LAUNCH_BLOCK_MESSAGES['no-active-event']).toContain('integrantes')
+    expect(LAUNCH_BLOCK_MESSAGES['monthly-tab-closed']).toContain('extrato')
+    expect(LAUNCH_BLOCK_MESSAGES['event-tab-closed']).toContain('Reabra')
   })
 })

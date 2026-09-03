@@ -1,7 +1,7 @@
-import { getActiveEvent } from '../../application/active-event'
-import type { BarDatabase } from '../../application/bar-repository'
-import { CONSUMER_KIND, TAB_KIND, TAB_STATUS } from '../../domain/constants'
-import type { Consumer, Consumption, Tab } from '../../domain/entities'
+import { getActiveEvent } from './active-event'
+import type { BarDatabase } from './bar-repository'
+import { CONSUMER_KIND, TAB_KIND, TAB_STATUS } from '../domain/constants'
+import type { Consumer, Consumption, Tab } from '../domain/entities'
 
 /** Why a selected consumer cannot receive new consumption right now. */
 export type LaunchBlockReason =
