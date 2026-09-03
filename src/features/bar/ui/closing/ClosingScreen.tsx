@@ -1,4 +1,5 @@
 import { useMutation } from '@tanstack/react-query'
+import { useState } from 'react'
 
 import { CURRENT_ACTOR_ID } from '../../application/actor'
 import type { BarDatabase } from '../../application/bar-repository'
@@ -109,23 +110,20 @@ function PreviewMonthView({
 
   return (
     <div className="flex flex-col gap-4">
-      <Card className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <Card className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <p className="text-sm text-content-muted">Situação do mês</p>
           <p className="text-base font-semibold text-content-primary">
             Prévia — nada foi salvo ainda.
           </p>
         </div>
-        <Button onClick={onClose} disabled={isClosing}>
-          {isClosing ? 'Fechando…' : 'Fechar mês'}
-        </Button>
+        <CloseMonthAction
+          month={month}
+          isClosing={isClosing}
+          errorMessage={errorMessage}
+          onConfirm={onClose}
+        />
       </Card>
-
-      {errorMessage ? (
-        <p role="alert" className="text-sm text-accent">
-          {errorMessage}
-        </p>
-      ) : null}
 
       {preview.length === 0 ? (
         <EmptyState
@@ -139,6 +137,58 @@ function PreviewMonthView({
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+interface CloseMonthActionProps {
+  readonly month: string
+  readonly isClosing: boolean
+  readonly errorMessage?: string
+  readonly onConfirm: () => void
+}
+
+type CloseConfirmMode = 'idle' | 'confirm'
+
+/**
+ * Closing a month is irreversible — it freezes the month into statements
+ * and closes every member's monthly tab, with no reopen path anywhere in
+ * the repository — so it requires an explicit two-step confirmation, the
+ * same in-place pattern `TabCard` uses for closing/reopening a visitor tab.
+ * The trigger button and the confirm box are mutually exclusive, so there
+ * is never a moment where a second click could fire the mutation twice.
+ */
+function CloseMonthAction({ month, isClosing, errorMessage, onConfirm }: CloseMonthActionProps) {
+  const [mode, setMode] = useState<CloseConfirmMode>('idle')
+
+  if (mode !== 'confirm') {
+    return (
+      <Button onClick={() => setMode('confirm')} disabled={isClosing}>
+        Fechar mês
+      </Button>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-2 rounded-md border border-border-subtle p-3">
+      <p className="text-sm text-content-primary">
+        Confirma o fechamento de {formatMonth(month)}? Esta ação é irreversível: as comandas
+        mensais dos integrantes serão fechadas e o consumo do mês será congelado em extratos
+        individuais.
+      </p>
+      {errorMessage ? (
+        <p role="alert" className="text-sm font-medium text-accent">
+          {errorMessage}
+        </p>
+      ) : null}
+      <div className="flex flex-wrap gap-2">
+        <Button onClick={onConfirm} disabled={isClosing}>
+          {isClosing ? 'Fechando…' : 'Confirmar fechamento'}
+        </Button>
+        <Button variant="ghost" onClick={() => setMode('idle')} disabled={isClosing}>
+          Cancelar
+        </Button>
+      </div>
     </div>
   )
 }

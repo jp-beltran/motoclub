@@ -8,7 +8,7 @@ import type { Consumption, MemberStatement, MonthlyClosing } from '../../domain/
 import type { MonthlyConsolidation } from '../../domain/monthly-closing'
 import { createFakeBarRepository } from '../../../../test/fake-bar-repository'
 import { renderWithBar } from '../../../../test/render-with-bar'
-import { getCurrentMonth } from '../../../../shared/date'
+import { formatMonth, getCurrentMonth } from '../../../../shared/date'
 import { ClosingScreen } from './ClosingScreen'
 
 const MONTH = getCurrentMonth()
@@ -146,12 +146,47 @@ describe('ClosingScreen', () => {
 
     await screen.findByText('Ana Paula')
     await user.click(screen.getByRole('button', { name: 'Fechar mês' }))
+    expect(createMonthlyClosing).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', { name: 'Confirmar fechamento' }))
 
     await waitFor(() => expect(createMonthlyClosing).toHaveBeenCalledTimes(1))
     expect(createMonthlyClosing).toHaveBeenCalledWith({ month: MONTH, actorId: 'admin-demo' })
     expect(await screen.findByText(/Fechado em/)).toBeInTheDocument()
     expect(screen.getByText('Ana Paula')).toBeInTheDocument()
     expect(createMonthlyClosing).toHaveBeenCalledTimes(1)
+  })
+
+  it('requires an explicit confirmation before closing the month, naming the month and the tab effect', async () => {
+    const createMonthlyClosing = vi.fn()
+    const repository = createFakeBarRepository({ createMonthlyClosing }, baseDatabase())
+    const user = userEvent.setup()
+
+    renderWithBar(<ClosingScreen />, { repository })
+
+    await screen.findByText('Ana Paula')
+    await user.click(screen.getByRole('button', { name: 'Fechar mês' }))
+
+    expect(createMonthlyClosing).not.toHaveBeenCalled()
+    const confirmation = screen.getByText(/irreversível/i)
+    expect(confirmation).toHaveTextContent(/comandas mensais/i)
+    expect(confirmation).toHaveTextContent(formatMonth(MONTH))
+    expect(screen.getByRole('button', { name: 'Confirmar fechamento' })).toBeInTheDocument()
+  })
+
+  it('cancels the close confirmation without calling the repository', async () => {
+    const createMonthlyClosing = vi.fn()
+    const repository = createFakeBarRepository({ createMonthlyClosing }, baseDatabase())
+    const user = userEvent.setup()
+
+    renderWithBar(<ClosingScreen />, { repository })
+
+    await screen.findByText('Ana Paula')
+    await user.click(screen.getByRole('button', { name: 'Fechar mês' }))
+    await user.click(screen.getByRole('button', { name: 'Cancelar' }))
+
+    expect(createMonthlyClosing).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'Fechar mês' })).toBeInTheDocument()
   })
 
   it('cannot close a month that already has a closing, and explains why', async () => {
