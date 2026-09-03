@@ -377,6 +377,94 @@ describe('LocalBarRepository workflows', () => {
     expect(storage.values.get('test-bar')).not.toBe(beforeBytes)
   })
 
+  it('refuses to cancel consumption a monthly closing already froze', async () => {
+    const { repository, storage } = createRepository()
+    await repository.createMonthlyClosing({ month: '2026-09', actorId: 'admin' })
+    const bytes = storage.values.get('test-bar')
+
+    await expect(repository.cancelConsumption({
+      consumptionId: 'cons-ana-cerveja', actorId: 'admin',
+    })).rejects.toThrow('Consumption is frozen in a member statement')
+
+    expect(storage.values.get('test-bar')).toBe(bytes)
+  })
+
+  it('refuses to cancel consumption on a closed tab', async () => {
+    const { repository, storage } = createRepository()
+    await repository.closeVisitorTab('tab-rafael-evento')
+    const bytes = storage.values.get('test-bar')
+
+    await expect(repository.cancelConsumption({
+      consumptionId: 'cons-rafael-refri', actorId: 'admin',
+    })).rejects.toThrow('Consumption belongs to a closed tab')
+
+    expect(storage.values.get('test-bar')).toBe(bytes)
+  })
+
+  it('refuses a cancellation that would leave the tab overpaid', async () => {
+    const { repository, storage } = createRepository()
+    // Rafael's tab: 2x Refrigerante = R$ 12,00, R$ 7,00 already settled in
+    // the seed. Settle the other R$ 5,00 and the tab is square; cancelling
+    // the line now would strand the whole R$ 12,00 with the club.
+    await repository.recordPayment({
+      target: PAYMENT_TARGET.TAB, targetId: 'tab-rafael-evento',
+      amountCents: 500, actorId: 'admin',
+    })
+    const bytes = storage.values.get('test-bar')
+
+    await expect(repository.cancelConsumption({
+      consumptionId: 'cons-rafael-refri', actorId: 'admin',
+    })).rejects.toThrow('Consumption is covered by a settled payment')
+
+    expect(storage.values.get('test-bar')).toBe(bytes)
+  })
+
+  it('never lets a settled tab saturate into a silent overpayment', async () => {
+    const { repository } = createRepository()
+    await repository.recordPayment({
+      target: PAYMENT_TARGET.TAB, targetId: 'tab-rafael-evento',
+      amountCents: 500, actorId: 'admin',
+    })
+
+    await expect(repository.cancelConsumption({
+      consumptionId: 'cons-rafael-refri', actorId: 'admin',
+    })).rejects.toThrow()
+
+    // The refusal is what keeps the money honest: the tab still owes nothing
+    // and still holds exactly the R$ 12,00 it was paid, with the line intact.
+    const snapshot = await repository.getSnapshot()
+    const line = snapshot.consumptions.find(({ id }) => id === 'cons-rafael-refri')
+    expect(line?.status).toBe(CONSUMPTION_STATUS.ACTIVE)
+    expect(snapshot.payments
+      .filter(({ targetId }) => targetId === 'tab-rafael-evento')
+      .reduce((total, { amountCents }) => total + amountCents, 0)).toBe(1200)
+  })
+
+  it('refuses to edit the quantity of consumption a closing already froze', async () => {
+    const { repository } = createRepository()
+    await repository.createMonthlyClosing({ month: '2026-09', actorId: 'admin' })
+
+    await expect(repository.editConsumptionQuantity({
+      consumptionId: 'cons-ana-cerveja', quantity: 1, actorId: 'admin',
+    })).rejects.toThrow('Consumption is frozen in a member statement')
+  })
+
+  it('still cancels a line a partial payment does not yet cover', async () => {
+    const { repository } = createRepository()
+    // R$ 12,00 due, R$ 7,00 settled in the seed: adding a second line and
+    // cancelling it leaves R$ 12,00 due, still above what was paid.
+    const added = await repository.createConsumption({
+      tabId: 'tab-rafael-evento', itemId: 'item-espetinho', quantity: 1,
+      chargeKind: CHARGE_KIND.CHARGED, actorId: 'admin',
+    })
+
+    const cancelled = await repository.cancelConsumption({
+      consumptionId: added.consumption.id, actorId: 'admin',
+    })
+
+    expect(cancelled.consumption.status).toBe(CONSUMPTION_STATUS.CANCELLED)
+  })
+
   it('leaves bytes unchanged when a mutation fails', async () => {
     const { repository, storage } = createRepository()
     await repository.getSnapshot()

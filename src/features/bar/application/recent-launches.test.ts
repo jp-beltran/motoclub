@@ -9,6 +9,7 @@ import {
 } from '../domain/constants'
 import type { Consumption } from '../domain/entities'
 import { createDemoDatabase } from '../infrastructure/demo-seed'
+import { CANCELLATION_BLOCK } from '../domain/cancellation'
 import { RECENT_LAUNCH_LIMIT } from './constants'
 import { listRecentLaunches } from './recent-launches'
 
@@ -108,5 +109,39 @@ describe('listRecentLaunches', () => {
     const snapshot = withConsumptions([launch('c1', new Date(2026, 8, 18, 10, 0))])
 
     expect(listRecentLaunches(snapshot, TODAY)).toEqual([])
+  })
+})
+
+describe('listRecentLaunches cancellation blocks', () => {
+  it('leaves a launch on a live, unsettled tab freely correctable', () => {
+    const snapshot = withConsumptions([launch('cons-live', new Date(2026, 8, 19, 20, 0))])
+
+    expect(listRecentLaunches(snapshot, TODAY)[0].cancellationBlock).toBeUndefined()
+  })
+
+  it('marks a launch a monthly closing already froze', () => {
+    const frozen = launch('cons-frozen', new Date(2026, 8, 19, 20, 0))
+    const snapshot = withConsumptions([frozen])
+    snapshot.memberStatements = [{
+      id: 'statement-ana', memberId: 'member-ana', month: '2026-09',
+      consumptions: [frozen], createdAt: '2026-09-30T23:00:00.000Z',
+    }]
+
+    expect(listRecentLaunches(snapshot, TODAY)[0].cancellationBlock).toBe(
+      CANCELLATION_BLOCK.CONSOLIDATED,
+    )
+  })
+
+  it('marks a launch whose tab is already closed', () => {
+    const snapshot = withConsumptions([launch('cons-closed', new Date(2026, 8, 19, 20, 0))])
+    snapshot.tabs = snapshot.tabs.map((tab) =>
+      tab.id === 'tab-ana-2026-09'
+        ? { ...tab, status: TAB_STATUS.CLOSED, closedAt: '2026-09-30T23:00:00.000Z' }
+        : tab,
+    )
+
+    expect(listRecentLaunches(snapshot, TODAY)[0].cancellationBlock).toBe(
+      CANCELLATION_BLOCK.CLOSED_TAB,
+    )
   })
 })

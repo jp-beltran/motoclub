@@ -1,3 +1,9 @@
+import {
+  CANCELLATION_BLOCK,
+  CANCELLATION_BLOCK_REASONS,
+  type CancellationBlock,
+} from '../domain/cancellation'
+
 const FALLBACK_MESSAGE = 'Não foi possível concluir a operação. Tente novamente.'
 
 /**
@@ -9,7 +15,34 @@ const FALLBACK_MESSAGE = 'Não foi possível concluir a operação. Tente novame
  * same repository failures: an area must never reach into another area's UI
  * folder for it.
  */
+const CANCELLATION_BLOCK_MESSAGES: Readonly<Record<CancellationBlock, string>> = {
+  [CANCELLATION_BLOCK.CONSOLIDATED]:
+    'Este lançamento já foi consolidado no extrato mensal e não pode mais ser cancelado.',
+  [CANCELLATION_BLOCK.CLOSED_TAB]:
+    'Esta comanda está fechada e o lançamento não pode mais ser cancelado.',
+  [CANCELLATION_BLOCK.SETTLED_PAYMENT]:
+    'Já existe pagamento registrado que cobre este lançamento.',
+}
+
+/**
+ * The same sentence, whether the operator reads it on a control that is
+ * already disabled or on the refusal that would have followed the click.
+ * `/lancamentos` disables the correction actions the repository would refuse
+ * and prints this next to them.
+ */
+export function describeCancellationBlock(block: CancellationBlock): string {
+  return CANCELLATION_BLOCK_MESSAGES[block]
+}
+
 const MESSAGES_BY_CAUSE: Readonly<Record<string, string>> = {
+  // Derived from one map, so the disabled control and the refused mutation
+  // can never drift into two different explanations of the same rule.
+  ...Object.fromEntries(
+    Object.values(CANCELLATION_BLOCK).map((block) => [
+      CANCELLATION_BLOCK_REASONS[block],
+      CANCELLATION_BLOCK_MESSAGES[block],
+    ]),
+  ),
   'Cannot add consumption to a closed tab':
     'Esta comanda está fechada e não aceita novos lançamentos.',
   'Event must be active': 'O evento desta comanda não está ativo.',
