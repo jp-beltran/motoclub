@@ -3,7 +3,7 @@ import { useMutation } from '@tanstack/react-query'
 import { EmptyState } from '../../../../shared/ui/EmptyState'
 import { useBarSnapshot, useInvalidateBar } from '../../application/queries'
 import { useBarRepository } from '../../application/repository-context'
-import { describeTabError } from './tab-errors'
+import { BAR_ERROR_FALLBACKS, describeBarError } from '../../application/error-messages'
 import { isEventActive } from './tab-status'
 import { groupEventTabs } from './event-tab-groups'
 import { TabCard } from './TabCard'
@@ -117,10 +117,14 @@ function TabGroups({
                 isClosePending={closePendingTabId === summary.tab.id}
                 isReopenPending={reopenPendingTabId === summary.tab.id}
                 closeErrorMessage={
-                  closeErrorTabId === summary.tab.id ? describeTabError(closeError) : undefined
+                  closeErrorTabId === summary.tab.id
+                    ? describeBarError(closeError, BAR_ERROR_FALLBACKS.tab)
+                    : undefined
                 }
                 reopenErrorMessage={
-                  reopenErrorTabId === summary.tab.id ? describeTabError(reopenError) : undefined
+                  reopenErrorTabId === summary.tab.id
+                    ? describeBarError(reopenError, BAR_ERROR_FALLBACKS.tab)
+                    : undefined
                 }
               />
             ))}

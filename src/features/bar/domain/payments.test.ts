@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
+import { expectBarErrorCode } from '../../../test/bar-error-assertions'
 import { PAYMENT_STATUS, PAYMENT_TARGET } from './constants'
 import type { Payment } from './entities'
 import { summarizePayments } from './payments'
@@ -33,38 +34,33 @@ describe('payment rules', () => {
   })
 
   it('rejects fractional cent amounts', () => {
-    expect(() => summarizePayments(1_000.5, [])).toThrow(
-      'Money amounts must use non-negative safe integer cents',
-    )
-    expect(() => summarizePayments(1_000, [payment('payment-1', 100.5)])).toThrow(
-      'Money amounts must use positive safe integer cents',
+    expectBarErrorCode(() => summarizePayments(1_000.5, []), 'money-amount-invalid')
+    expectBarErrorCode(
+      () => summarizePayments(1_000, [payment('payment-1', 100.5)]),
+      'money-amount-not-positive',
     )
   })
 
   it.each([-1, Number.MAX_SAFE_INTEGER + 1])(
     'rejects an invalid amount due of %s cents',
     (amountDueCents) => {
-      expect(() => summarizePayments(amountDueCents, [])).toThrow(
-        'Money amounts must use non-negative safe integer cents',
-      )
+      expectBarErrorCode(() => summarizePayments(amountDueCents, []), 'money-amount-invalid')
     },
   )
 
   it.each([0, -1, Number.MAX_SAFE_INTEGER + 1])(
     'rejects an invalid payment of %s cents',
     (amountCents) => {
-      expect(() =>
-        summarizePayments(1_000, [payment('payment-1', amountCents)]),
-      ).toThrow('Money amounts must use positive safe integer cents')
+      expectBarErrorCode(() =>
+        summarizePayments(1_000, [payment('payment-1', amountCents)]), 'money-amount-not-positive')
     },
   )
 
   it('rejects payment totals that overflow safe integer cents', () => {
-    expect(() =>
+    expectBarErrorCode(() =>
       summarizePayments(Number.MAX_SAFE_INTEGER, [
         payment('payment-1', Number.MAX_SAFE_INTEGER),
         payment('payment-2', 1),
-      ]),
-    ).toThrow('Money total exceeds safe integer cents')
+      ]), 'money-total-overflow')
   })
 })

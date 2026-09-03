@@ -1,9 +1,11 @@
+import { BarError } from './errors'
+
 export const INVALID_TIMESTAMP_MESSAGE = 'Timestamp must be a parseable date'
 
 export function getMonthKey(iso: string): string {
   const date = new Date(iso)
   if (Number.isNaN(date.getTime())) {
-    throw new Error(INVALID_TIMESTAMP_MESSAGE)
+    throw new BarError('timestamp-invalid', INVALID_TIMESTAMP_MESSAGE)
   }
   return `${pad(date.getFullYear(), 4)}-${pad(date.getMonth() + 1, 2)}`
 }

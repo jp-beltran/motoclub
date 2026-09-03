@@ -8,6 +8,7 @@ import type { StorageLike } from '../../application/bar-repository'
 import { LocalBarRepository } from '../../infrastructure/local-bar-repository'
 import { createDemoDatabase } from '../../infrastructure/demo-seed'
 import { CONSUMER_KIND, EVENT_STATUS, TAB_KIND, TAB_STATUS } from '../../domain/constants'
+import { BarError } from '../../domain/errors'
 import { ComandasView } from './ComandasView'
 
 class MemoryStorage implements StorageLike {
@@ -100,7 +101,7 @@ describe('ComandasView', () => {
     const repository = createFakeBarRepository(
       {
         closeVisitorTab: vi.fn(async () => {
-          throw new Error('Event must be active')
+          throw new BarError('event-not-active', 'Event must be active')
         }),
       },
       createDemoDatabase(),
@@ -116,14 +117,18 @@ describe('ComandasView', () => {
     await user.click(within(rafaelCard).getByRole('button', { name: 'Confirmar fechamento' }))
 
     const alert = await within(rafaelCard).findByRole('alert')
-    expect(alert).toHaveTextContent('Só é possível fechar ou reabrir comandas de um evento ativo.')
+    // One entry now serves both surfaces that reach `event-not-active`: it
+    // still names the rule this screen depends on ("alterar comandas de um
+    // evento ativo") and adds the cause the launch screen needs.
+    expect(alert).toHaveTextContent('O evento desta comanda não está ativo.')
+    expect(alert).toHaveTextContent('alterar comandas de um evento ativo.')
   })
 
   it('clears a stale close error when the confirmation is reopened, before any new attempt', async () => {
     const repository = createFakeBarRepository(
       {
         closeVisitorTab: vi.fn(async () => {
-          throw new Error('Event must be active')
+          throw new BarError('event-not-active', 'Event must be active')
         }),
       },
       createDemoDatabase(),

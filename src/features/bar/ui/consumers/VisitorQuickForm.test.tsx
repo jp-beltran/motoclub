@@ -6,6 +6,7 @@ import { renderWithBar } from '../../../../test/render-with-bar'
 import { createFakeBarRepository } from '../../../../test/fake-bar-repository'
 import { CONSUMER_KIND } from '../../domain/constants'
 import type { Consumer } from '../../domain/entities'
+import { BarError } from '../../domain/errors'
 import { VisitorQuickForm } from './VisitorQuickForm'
 
 const CREATED: Consumer = {
@@ -51,7 +52,7 @@ describe('VisitorQuickForm', () => {
 
   it('reports a repository failure in pt-BR and keeps the form open', async () => {
     const createVisitor = vi.fn(async () => {
-      throw new Error('Visitor name is required')
+      throw new BarError('visitor-name-required', 'Visitor name is required')
     })
     const user = userEvent.setup()
     renderWithBar(<VisitorQuickForm onCreated={vi.fn()} />, {

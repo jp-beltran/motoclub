@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
+import { expectBarErrorCode } from '../../../test/bar-error-assertions'
 import {
   CHARGE_KIND,
   CONSUMPTION_STATUS,
@@ -136,7 +137,7 @@ describe('consumption rules', () => {
   })
 
   it('forbids new consumption on a closed tab', () => {
-    expect(() =>
+    expectBarErrorCode(() =>
       recordConsumption(
         {
           tab: {
@@ -153,8 +154,7 @@ describe('consumption rules', () => {
           nextId: () => 'consumption-1',
           now: () => '2026-09-02T12:00:00.000Z',
         },
-      ),
-    ).toThrow('Cannot add consumption to a closed tab')
+      ), 'tab-closed')
   })
 
   it('creates a stock decrement for tracked courtesy consumption', () => {
@@ -212,7 +212,7 @@ describe('consumption rules', () => {
     ['negative price', { unitPriceCents: -1 }],
     ['unsafe price', { unitPriceCents: Number.MAX_SAFE_INTEGER + 1 }],
   ])('rejects an item with %s cents', (_caseName, itemOverride) => {
-    expect(() =>
+    expectBarErrorCode(() =>
       recordConsumption(
         {
           tab: OPEN_TAB,
@@ -225,12 +225,11 @@ describe('consumption rules', () => {
           nextId: () => 'unexpected-id',
           now: () => '2026-09-02T12:00:00.000Z',
         },
-      ),
-    ).toThrow('Money amounts must use non-negative safe integer cents')
+      ), 'money-amount-invalid')
   })
 
   it('rejects a consumption whose line total overflows safe integer cents', () => {
-    expect(() =>
+    expectBarErrorCode(() =>
       recordConsumption(
         {
           tab: OPEN_TAB,
@@ -246,12 +245,11 @@ describe('consumption rules', () => {
           nextId: () => 'unexpected-id',
           now: () => '2026-09-02T12:00:00.000Z',
         },
-      ),
-    ).toThrow('Money product exceeds safe integer cents')
+      ), 'money-product-overflow')
   })
 
   it('rejects a consumption whose cost total overflows safe integer cents', () => {
-    expect(() =>
+    expectBarErrorCode(() =>
       recordConsumption(
         {
           tab: OPEN_TAB,
@@ -267,8 +265,7 @@ describe('consumption rules', () => {
           nextId: () => 'unexpected-id',
           now: () => '2026-09-02T12:00:00.000Z',
         },
-      ),
-    ).toThrow('Money product exceeds safe integer cents')
+      ), 'money-product-overflow')
   })
 
   it('marks consumption cancelled and creates a tracked-stock reversal', () => {
@@ -319,7 +316,7 @@ describe('consumption rules', () => {
   })
 
   it('rejects cancellation of an already-cancelled consumption', () => {
-    expect(() =>
+    expectBarErrorCode(() =>
       cancelConsumption(
         {
           consumption: {
@@ -335,12 +332,11 @@ describe('consumption rules', () => {
           nextId: () => 'unexpected-id',
           now: () => '2026-09-02T13:00:00.000Z',
         },
-      ),
-    ).toThrow('Only active consumption can be cancelled')
+      ), 'consumption-already-cancelled')
   })
 
   it('rejects cancellation with an item from another consumption', () => {
-    expect(() =>
+    expectBarErrorCode(() =>
       cancelConsumption(
         {
           consumption: ACTIVE_CONSUMPTION,
@@ -351,12 +347,11 @@ describe('consumption rules', () => {
           nextId: () => 'unexpected-id',
           now: () => '2026-09-02T13:00:00.000Z',
         },
-      ),
-    ).toThrow('Consumption and item must match')
+      ), 'consumption-item-mismatch')
   })
 
   it('rejects a non-consumption original stock movement', () => {
-    expect(() =>
+    expectBarErrorCode(() =>
       cancelConsumption(
         {
           consumption: ACTIVE_CONSUMPTION,
@@ -371,12 +366,11 @@ describe('consumption rules', () => {
           nextId: () => 'unexpected-id',
           now: () => '2026-09-02T13:00:00.000Z',
         },
-      ),
-    ).toThrow('Original stock movement must match the consumption and item')
+      ), 'stock-movement-mismatch')
   })
 
   it('rejects an original stock movement for another consumption', () => {
-    expect(() =>
+    expectBarErrorCode(() =>
       cancelConsumption(
         {
           consumption: ACTIVE_CONSUMPTION,
@@ -391,12 +385,11 @@ describe('consumption rules', () => {
           nextId: () => 'unexpected-id',
           now: () => '2026-09-02T13:00:00.000Z',
         },
-      ),
-    ).toThrow('Original stock movement must match the consumption and item')
+      ), 'stock-movement-mismatch')
   })
 
   it('rejects an original stock movement for another item', () => {
-    expect(() =>
+    expectBarErrorCode(() =>
       cancelConsumption(
         {
           consumption: ACTIVE_CONSUMPTION,
@@ -411,12 +404,11 @@ describe('consumption rules', () => {
           nextId: () => 'unexpected-id',
           now: () => '2026-09-02T13:00:00.000Z',
         },
-      ),
-    ).toThrow('Original stock movement must match the consumption and item')
+      ), 'stock-movement-mismatch')
   })
 
   it('rejects an original stock movement with a mismatched quantity delta', () => {
-    expect(() =>
+    expectBarErrorCode(() =>
       cancelConsumption(
         {
           consumption: ACTIVE_CONSUMPTION,
@@ -431,7 +423,6 @@ describe('consumption rules', () => {
           nextId: () => 'unexpected-id',
           now: () => '2026-09-02T13:00:00.000Z',
         },
-      ),
-    ).toThrow('Original stock movement must match the consumption and item')
+      ), 'stock-movement-mismatch')
   })
 })

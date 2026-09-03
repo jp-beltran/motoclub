@@ -1,11 +1,12 @@
-import { describe, expect, it } from 'vitest'
+import { describe, it } from 'vitest'
 
+import { expectBarErrorCode } from '../../../test/bar-error-assertions'
 import { assertPositiveIntegerQuantity } from './quantity'
 
 describe('consumption quantities', () => {
   it('rejects zero, negative, and fractional quantities', () => {
-    expect(() => assertPositiveIntegerQuantity(0)).toThrow('Quantity must be a positive integer')
-    expect(() => assertPositiveIntegerQuantity(-1)).toThrow('Quantity must be a positive integer')
-    expect(() => assertPositiveIntegerQuantity(1.5)).toThrow('Quantity must be a positive integer')
+    expectBarErrorCode(() => assertPositiveIntegerQuantity(0), 'quantity-invalid')
+    expectBarErrorCode(() => assertPositiveIntegerQuantity(-1), 'quantity-invalid')
+    expectBarErrorCode(() => assertPositiveIntegerQuantity(1.5), 'quantity-invalid')
   })
 })

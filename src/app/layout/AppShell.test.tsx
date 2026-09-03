@@ -39,7 +39,7 @@ describe('AppShell', () => {
   it('shows a stable persistence error message with both recovery actions, without a blank screen', async () => {
     const repository = createFakeBarRepository({
       getSnapshot: vi.fn(async () => {
-        throw new BarPersistenceError('malformed-json', 'Stored bar data is malformed JSON')
+        throw new BarPersistenceError('stored-data-malformed', 'Stored bar data is malformed JSON')
       }),
     })
 
@@ -61,7 +61,7 @@ describe('AppShell', () => {
     const user = userEvent.setup()
     const repository = createFakeBarRepository({
       getSnapshot: vi.fn(async () => {
-        throw new BarPersistenceError('malformed-json', 'Stored bar data is malformed JSON')
+        throw new BarPersistenceError('stored-data-malformed', 'Stored bar data is malformed JSON')
       }),
     })
 

@@ -4,6 +4,7 @@ import type {
   MonthlyClosing,
 } from './entities'
 import type { DomainDependencies } from './dependencies'
+import { BarError } from './errors'
 import { getMonthKey } from './month'
 
 const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/
@@ -26,7 +27,7 @@ export function consolidateMonth(
   dependencies: DomainDependencies,
 ): MonthlyConsolidation {
   if (!MONTH_PATTERN.test(input.month)) {
-    throw new Error(INVALID_MONTH_MESSAGE)
+    throw new BarError('month-format-invalid', INVALID_MONTH_MESSAGE)
   }
 
   const createdAt = dependencies.now()

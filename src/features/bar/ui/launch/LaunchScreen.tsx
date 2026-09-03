@@ -2,7 +2,7 @@ import { useState } from 'react'
 
 import { getActiveEvent } from '../../application/active-event'
 import { getResolvedTab, resolveConsumerTab } from '../../application/consumer-tab'
-import { describeRepositoryError } from '../../application/error-messages'
+import { describeBarError } from '../../application/error-messages'
 import { useBarSnapshot } from '../../application/queries'
 import { summarizeTab } from '../../application/tab-summary'
 import { CHARGE_KIND, STOCK_WARNING, type ChargeKind } from '../../domain/constants'
@@ -85,7 +85,7 @@ export function LaunchScreen() {
           })
         },
         onError: (error) => {
-          setFeedback({ message: describeRepositoryError(error), tone: 'error' })
+          setFeedback({ message: describeBarError(error), tone: 'error' })
         },
       },
     )
@@ -97,7 +97,7 @@ export function LaunchScreen() {
         setFeedback({ message: 'Lançamento desfeito.', tone: 'success' })
       },
       onError: (error) => {
-        setFeedback({ message: describeRepositoryError(error), tone: 'error' })
+        setFeedback({ message: describeBarError(error), tone: 'error' })
       },
     })
   }
@@ -113,7 +113,7 @@ export function LaunchScreen() {
           })
         },
         onError: (error) => {
-          setFeedback({ message: describeRepositoryError(error), tone: 'error' })
+          setFeedback({ message: describeBarError(error), tone: 'error' })
         },
       },
     )
@@ -131,7 +131,7 @@ export function LaunchScreen() {
           })
         },
         onError: (error) => {
-          setFeedback({ message: describeRepositoryError(error), tone: 'error' })
+          setFeedback({ message: describeBarError(error), tone: 'error' })
         },
       },
     )
@@ -143,7 +143,7 @@ export function LaunchScreen() {
         setFeedback({ message: 'Lançamento cancelado.', tone: 'success' })
       },
       onError: (error) => {
-        setFeedback({ message: describeRepositoryError(error), tone: 'error' })
+        setFeedback({ message: describeBarError(error), tone: 'error' })
       },
     })
   }
