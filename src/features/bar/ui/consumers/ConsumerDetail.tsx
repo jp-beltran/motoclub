@@ -25,9 +25,10 @@ export interface ConsumerDetailProps {
 /**
  * Full consumption history of one consumer. Every consumption is listed,
  * including cancelled ones — visibly marked here — but the outstanding
- * total above the list comes straight from `getConsumerOutstandingCents`
- * (built on `summarizeTab`), which already leaves cancelled and courtesy
- * consumption out.
+ * total above the list comes straight from `getConsumerOutstandingCents`,
+ * which already leaves cancelled and courtesy consumption out. See that
+ * selector's own doc comment for exactly how it derives the total for each
+ * consumer kind (they differ).
  */
 export function ConsumerDetail({
   consumer,
