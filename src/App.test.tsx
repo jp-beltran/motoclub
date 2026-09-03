@@ -13,7 +13,7 @@ describe('App', () => {
     render(<App />)
 
     expect(await screen.findByRole('heading', { name: 'Painel' })).toBeInTheDocument()
-    expect(screen.getByText('Em construção.')).toBeInTheDocument()
+    expect(screen.getByText('setembro de 2026')).toBeInTheDocument()
 
     const nav = screen.getByRole('navigation', { name: 'Navegação principal' })
     expect(nav.querySelectorAll('a')).toHaveLength(8)
