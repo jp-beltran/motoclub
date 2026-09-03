@@ -13,7 +13,9 @@ export function DashboardStats({ summary }: DashboardStatsProps) {
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
       <StatTile label="Consumo do mês" value={formatCents(summary.revenueCents)} />
       <StatTile label="Recebido" value={formatCents(summary.receivedCents)} />
-      <StatTile label="Pendente" value={formatCents(summary.pendingCents)} />
+      {/* "(total)": pendingCents is everything still owed right now, across
+          every month — not scoped to the month above, see dashboard-summary.ts */}
+      <StatTile label="Pendente (total)" value={formatCents(summary.pendingCents)} />
       <StatTile label="Custo" value={formatCents(summary.costCents)} />
       <StatTile label="Lucro" value={formatCents(summary.profitCents)} />
       <StatTile label="Margem" value={formatMargin(summary.margin)} />
