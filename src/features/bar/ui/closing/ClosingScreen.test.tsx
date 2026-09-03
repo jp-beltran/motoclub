@@ -12,6 +12,12 @@ import { formatMonth, getCurrentMonth } from '../../../../shared/date'
 import { ClosingScreen } from './ClosingScreen'
 
 const MONTH = getCurrentMonth()
+const PREVIOUS_MONTH = previousMonthOf(MONTH)
+
+function previousMonthOf(month: string): string {
+  const [year, monthNumber] = month.split('-').map(Number)
+  return getCurrentMonth(new Date(year, monthNumber - 2, 1))
+}
 
 /**
  * `getMonthKey` is local-time based and `ClosingScreen` asks for whatever
@@ -22,6 +28,11 @@ const MONTH = getCurrentMonth()
  */
 function isoInMonth(day: number, hour = 12): string {
   const [year, month] = MONTH.split('-').map(Number)
+  return new Date(year, month - 1, day, hour, 0).toISOString()
+}
+
+function isoInPreviousMonth(day: number, hour = 12): string {
+  const [year, month] = PREVIOUS_MONTH.split('-').map(Number)
   return new Date(year, month - 1, day, hour, 0).toISOString()
 }
 
@@ -187,6 +198,92 @@ describe('ClosingScreen', () => {
 
     expect(createMonthlyClosing).not.toHaveBeenCalled()
     expect(screen.getByRole('button', { name: 'Fechar mês' })).toBeInTheDocument()
+  })
+
+  it('defaults the month picker to the current month', async () => {
+    renderWithBar(<ClosingScreen />, {
+      repository: createFakeBarRepository({}, baseDatabase()),
+    })
+
+    const picker = await screen.findByLabelText('Mês do fechamento')
+    expect(picker).toHaveValue(MONTH)
+  })
+
+  it('offers an earlier month that still has consumption nobody closed', async () => {
+    const database = baseDatabase()
+    database.tabs = [...database.tabs, {
+      id: 'tab-ana-previous', kind: TAB_KIND.MONTHLY, status: TAB_STATUS.OPEN,
+      memberId: 'member-ana', month: PREVIOUS_MONTH, openedAt: isoInPreviousMonth(1),
+    }]
+    database.consumptions = [...database.consumptions, consumptionFixture({
+      id: 'c-previous', consumerId: 'member-ana', tabId: 'tab-ana-previous',
+      quantity: 2, createdAt: isoInPreviousMonth(12),
+    })]
+
+    renderWithBar(<ClosingScreen />, {
+      repository: createFakeBarRepository({}, database),
+    })
+
+    const picker = await screen.findByLabelText('Mês do fechamento')
+    expect(
+      [...picker.querySelectorAll('option')].map((option) => option.value),
+    ).toEqual([MONTH, PREVIOUS_MONTH])
+  })
+
+  it('closes whichever month the operator picked, not the current one', async () => {
+    const database = baseDatabase()
+    database.tabs = [...database.tabs, {
+      id: 'tab-ana-previous', kind: TAB_KIND.MONTHLY, status: TAB_STATUS.OPEN,
+      memberId: 'member-ana', month: PREVIOUS_MONTH, openedAt: isoInPreviousMonth(1),
+    }]
+    database.consumptions = [...database.consumptions, consumptionFixture({
+      id: 'c-previous', consumerId: 'member-ana', tabId: 'tab-ana-previous',
+      quantity: 2, createdAt: isoInPreviousMonth(12),
+    })]
+    const createMonthlyClosing = vi.fn()
+    const repository = createFakeBarRepository({ createMonthlyClosing }, database)
+    const user = userEvent.setup()
+
+    renderWithBar(<ClosingScreen />, { repository })
+
+    await user.selectOptions(await screen.findByLabelText('Mês do fechamento'), PREVIOUS_MONTH)
+    await user.click(screen.getByRole('button', { name: 'Fechar mês' }))
+    expect(screen.getByText(/irreversível/i)).toHaveTextContent(formatMonth(PREVIOUS_MONTH))
+
+    await user.click(screen.getByRole('button', { name: 'Confirmar fechamento' }))
+
+    await waitFor(() =>
+      expect(createMonthlyClosing).toHaveBeenCalledWith({
+        month: PREVIOUS_MONTH, actorId: 'admin-demo',
+      }),
+    )
+  })
+
+  it("still reaches an earlier month's frozen statements once the calendar rolled over", async () => {
+    const database = baseDatabase()
+    database.monthlyClosings = [{
+      id: 'closing-previous', month: PREVIOUS_MONTH, statementIds: ['statement-ana-previous'],
+      closedAt: isoInMonth(1), actorId: 'admin-demo',
+    }]
+    database.memberStatements = [{
+      id: 'statement-ana-previous', memberId: 'member-ana', month: PREVIOUS_MONTH,
+      consumptions: [consumptionFixture({
+        id: 'c-previous', consumerId: 'member-ana', tabId: 'tab-ana-previous',
+        quantity: 2, createdAt: isoInPreviousMonth(12),
+      })],
+      createdAt: isoInMonth(1),
+    }]
+    const user = userEvent.setup()
+
+    renderWithBar(<ClosingScreen />, {
+      repository: createFakeBarRepository({}, database),
+    })
+
+    await user.selectOptions(await screen.findByLabelText('Mês do fechamento'), PREVIOUS_MONTH)
+
+    expect(await screen.findByText(/já foi fechado/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Fechar mês' })).toBeDisabled()
+    expect(screen.getByText('Total: R$ 14,00')).toBeInTheDocument()
   })
 
   it('cannot close a month that already has a closing, and explains why', async () => {

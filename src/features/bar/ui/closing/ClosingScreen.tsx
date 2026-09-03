@@ -16,9 +16,11 @@ import { ChargeMessageCard } from './ChargeMessageCard'
 import { describeClosingError } from './closing-messages'
 import {
   buildMonthPreview,
+  listClosingMonths,
   summarizeClosedStatement,
   type ClosedMemberStatementView,
   type ClosingLine,
+  type ClosingMonthOption,
   type MemberMonthPreview,
 } from './closing-selectors'
 
@@ -35,18 +37,25 @@ const PAYMENT_STATUS_TEXT_CLASSES: Record<PaymentStatus, string> = {
 }
 
 /**
- * `/fechamento`: a live preview of the current month before closing it, and
- * — once `createMonthlyClosing` has run for that month — the frozen
- * statements it produced. The screen itself never writes anything; only the
- * "Fechar mês" mutation does, and it is only reachable while no closing
- * exists yet for the month.
+ * `/fechamento`: a live preview of a month before closing it, and — once
+ * `createMonthlyClosing` has run for that month — the frozen statements it
+ * produced. The screen itself never writes anything; only the "Fechar mês"
+ * mutation does, and it is only reachable while no closing exists yet for
+ * the selected month.
+ *
+ * The month is chosen explicitly, defaulting to the current one. Pinning it
+ * to `getCurrentMonth()` used to make an unclosed month unclosable forever
+ * once the calendar rolled over, and hid every earlier month's frozen
+ * statements and charge messages (Ruling 27(b)).
  */
 export function ClosingScreen() {
-  const month = getCurrentMonth()
+  const currentMonth = getCurrentMonth()
+  const [selectedMonth, setSelectedMonth] = useState<string>()
   const repository = useBarRepository()
   const invalidateBar = useInvalidateBar()
   const { data: snapshot, isPending, isError } = useBarSnapshot()
 
+  const month = selectedMonth ?? currentMonth
   const createClosing = useMutation({
     mutationFn: () => repository.createMonthlyClosing({ month, actorId: CURRENT_ACTOR_ID }),
     onSuccess: () => {
@@ -58,9 +67,18 @@ export function ClosingScreen() {
 
   return (
     <div className="flex flex-col gap-6">
-      <header>
+      <header className="flex flex-col gap-3">
         <h1 className="text-2xl font-semibold text-content-primary">Fechamento</h1>
-        <p className="mt-1 text-content-muted">{formatMonth(month)}</p>
+        {snapshot ? (
+          <MonthPicker
+            options={listClosingMonths(snapshot, currentMonth)}
+            month={month}
+            onChange={(picked) => {
+              setSelectedMonth(picked)
+              createClosing.reset()
+            }}
+          />
+        ) : null}
       </header>
 
       {isPending ? <p className="text-content-muted">Carregando fechamento…</p> : null}
@@ -88,6 +106,36 @@ export function ClosingScreen() {
         />
       ) : null}
     </div>
+  )
+}
+
+interface MonthPickerProps {
+  readonly options: readonly ClosingMonthOption[]
+  readonly month: string
+  readonly onChange: (month: string) => void
+}
+
+/**
+ * Which month the screen is acting on. Every month with consumption still
+ * waiting to be closed is offered, plus every month already closed so its
+ * frozen statements stay reachable after the calendar rolls over.
+ */
+function MonthPicker({ options, month, onChange }: MonthPickerProps) {
+  return (
+    <label className="flex max-w-xs flex-col gap-1 text-sm text-content-muted">
+      Mês do fechamento
+      <select
+        value={month}
+        onChange={(event) => onChange(event.target.value)}
+        className="min-h-11 rounded-md border border-border-subtle bg-surface-raised px-3 text-sm text-content-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+      >
+        {options.map((option) => (
+          <option key={option.month} value={option.month}>
+            {option.isClosed ? `${formatMonth(option.month)} (fechado)` : formatMonth(option.month)}
+          </option>
+        ))}
+      </select>
+    </label>
   )
 }
 
