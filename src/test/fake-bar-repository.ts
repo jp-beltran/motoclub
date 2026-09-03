@@ -35,6 +35,7 @@ export function createFakeBarRepository(
     }),
     createVisitor: vi.fn(async () => notImplemented('createVisitor')),
     ensureEventTab: vi.fn(async () => notImplemented('ensureEventTab')),
+    ensureMonthlyTab: vi.fn(async () => notImplemented('ensureMonthlyTab')),
     selectOrCreateActiveEvent: vi.fn(async () => notImplemented('selectOrCreateActiveEvent')),
     createConsumption: vi.fn(async () => notImplemented('createConsumption')),
     cancelConsumption: vi.fn(async () => notImplemented('cancelConsumption')),
