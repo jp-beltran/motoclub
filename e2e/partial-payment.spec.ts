@@ -15,8 +15,12 @@ test('a partial payment on a member statement leaves the right remaining balance
 }) => {
   await resetDemoDatabase(page)
 
+  // Closing a month is a two-step confirmation (irreversible: it freezes
+  // the month into statements and closes every member's monthly tab), so
+  // the trigger click alone does not perform it.
   await page.goto('/fechamento')
   await page.getByRole('button', { name: 'Fechar mês' }).click()
+  await page.getByRole('button', { name: 'Confirmar fechamento' }).click()
   await expect(page.getByRole('button', { name: 'Fechar mês' })).toBeDisabled()
 
   await page.goto('/pagamentos')
