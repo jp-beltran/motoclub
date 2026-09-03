@@ -337,6 +337,28 @@ describe('ClosingScreen', () => {
     expect(screen.queryByText('Não pago')).not.toBeInTheDocument()
   })
 
+  it('clears a failed attempt when the confirmation is closed and reopened', async () => {
+    const createMonthlyClosing = vi.fn().mockRejectedValue(new Error('Monthly closing already exists'))
+    const repository = createFakeBarRepository({ createMonthlyClosing }, baseDatabase())
+    const user = userEvent.setup()
+
+    renderWithBar(<ClosingScreen />, { repository })
+
+    await screen.findByText('Ana Paula')
+    await user.click(screen.getByRole('button', { name: 'Fechar mês' }))
+    await user.click(screen.getByRole('button', { name: 'Confirmar fechamento' }))
+    const failure = await screen.findByRole('alert')
+    expect(failure).toBeInTheDocument()
+
+    // Backing out hides the error, so reopening must not show the old one
+    // before the operator has tried anything.
+    await user.click(screen.getByRole('button', { name: 'Cancelar' }))
+    await user.click(screen.getByRole('button', { name: 'Fechar mês' }))
+
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Confirmar fechamento' })).toBeEnabled()
+  })
+
   it('cannot close a month that already has a closing, and explains why', async () => {
     const database = baseDatabase()
     const closing: MonthlyClosing = {

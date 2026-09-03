@@ -87,6 +87,7 @@ export function ClosingScreen() {
           snapshot={snapshot}
           month={month}
           onClose={() => createClosing.mutate()}
+          onStartClose={() => createClosing.reset()}
           isClosing={createClosing.isPending}
           errorMessage={
             createClosing.isError ? describeClosingError(createClosing.error) : undefined
@@ -131,6 +132,8 @@ interface PreviewMonthViewProps {
   readonly snapshot: BarDatabase
   readonly month: string
   readonly onClose: () => void
+  /** Clears a stale failure before the confirmation is shown again. */
+  readonly onStartClose: () => void
   readonly isClosing: boolean
   readonly errorMessage?: string
 }
@@ -139,6 +142,7 @@ function PreviewMonthView({
   snapshot,
   month,
   onClose,
+  onStartClose,
   isClosing,
   errorMessage,
 }: PreviewMonthViewProps) {
@@ -158,6 +162,7 @@ function PreviewMonthView({
           isClosing={isClosing}
           errorMessage={errorMessage}
           onConfirm={onClose}
+          onStart={onStartClose}
         />
       </Card>
 
@@ -182,6 +187,8 @@ interface CloseMonthActionProps {
   readonly isClosing: boolean
   readonly errorMessage?: string
   readonly onConfirm: () => void
+  /** Called when the confirmation is (re)opened, so the caller can clear a stale error from a previous attempt before it is shown again. */
+  readonly onStart: () => void
 }
 
 type CloseConfirmMode = 'idle' | 'confirm'
@@ -193,13 +200,30 @@ type CloseConfirmMode = 'idle' | 'confirm'
  * same in-place pattern `TabCard` uses for closing/reopening a visitor tab.
  * The trigger button and the confirm box are mutually exclusive, so there
  * is never a moment where a second click could fire the mutation twice.
+ *
+ * Reopening the box resets the mutation first, the same way ComandasView
+ * does: a failed closing followed by "Cancelar" hides the error, and without
+ * the reset the box would come back already showing the old failure before
+ * the operator had tried anything.
  */
-function CloseMonthAction({ month, isClosing, errorMessage, onConfirm }: CloseMonthActionProps) {
+function CloseMonthAction({
+  month,
+  isClosing,
+  errorMessage,
+  onConfirm,
+  onStart,
+}: CloseMonthActionProps) {
   const [mode, setMode] = useState<CloseConfirmMode>('idle')
 
   if (mode !== 'confirm') {
     return (
-      <Button onClick={() => setMode('confirm')} disabled={isClosing}>
+      <Button
+        onClick={() => {
+          onStart()
+          setMode('confirm')
+        }}
+        disabled={isClosing}
+      >
         Fechar mês
       </Button>
     )

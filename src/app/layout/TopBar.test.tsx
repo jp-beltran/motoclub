@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
 import { CURRENT_ACTOR_NAME } from '../../features/bar/application/actor'
+import { createFakeBarRepository } from '../../test/fake-bar-repository'
 import { renderWithBar } from '../../test/render-with-bar'
 import { TopBar } from './TopBar'
 
@@ -10,6 +11,27 @@ function renderTopBar(activeEventName?: string) {
   const { repository } = renderWithBar(<TopBar activeEventName={activeEventName} />)
   return { repository }
 }
+
+describe('TopBar demo reset failure', () => {
+  it('reports a failed restore in pt-BR instead of silently re-enabling', async () => {
+    const resetDemo = vi.fn().mockRejectedValue(new Error('QuotaExceededError'))
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    renderWithBar(<TopBar />, { repository: createFakeBarRepository({ resetDemo }) })
+
+    await userEvent.click(screen.getByRole('button', { name: 'Restaurar demonstração' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Não foi possível restaurar a demonstração. Tente novamente.',
+    )
+    confirmSpy.mockRestore()
+  })
+
+  it('says nothing while the restore has not failed', () => {
+    renderWithBar(<TopBar />)
+
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+})
 
 describe('TopBar', () => {
   it('shows the active event name when there is one', () => {
