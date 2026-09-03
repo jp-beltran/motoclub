@@ -18,7 +18,6 @@ export interface RecentLaunchRowProps {
   readonly onEditQuantity: (quantity: number) => void
   readonly onReassign: (targetTabId: string) => void
   readonly onCancel: () => void
-  readonly isBusy: boolean
 }
 
 /** One correction row: fix the quantity, move it to another tab, or undo it. */
@@ -28,7 +27,6 @@ export function RecentLaunchRow({
   onEditQuantity,
   onReassign,
   onCancel,
-  isBusy,
 }: RecentLaunchRowProps) {
   const [mode, setMode] = useState<RowMode>('idle')
   const [quantity, setQuantity] = useState(String(launch.consumption.quantity))
@@ -59,7 +57,6 @@ export function RecentLaunchRow({
           variant="ghost"
           aria-label={`Editar quantidade de ${label}`}
           aria-expanded={mode === 'quantity'}
-          disabled={isBusy}
           onClick={() => setMode((current) => (current === 'quantity' ? 'idle' : 'quantity'))}
           className="text-xs"
         >
@@ -69,7 +66,7 @@ export function RecentLaunchRow({
           variant="ghost"
           aria-label={`Trocar consumidor de ${label}`}
           aria-expanded={mode === 'reassign'}
-          disabled={isBusy || targets.length === 0}
+          disabled={targets.length === 0}
           onClick={() => setMode((current) => (current === 'reassign' ? 'idle' : 'reassign'))}
           className="text-xs"
         >
@@ -78,7 +75,6 @@ export function RecentLaunchRow({
         <Button
           variant="danger"
           aria-label={`Cancelar ${label}`}
-          disabled={isBusy}
           onClick={onCancel}
           className="text-xs"
         >
@@ -101,7 +97,7 @@ export function RecentLaunchRow({
           </label>
           <Button
             aria-label={`Salvar quantidade de ${label}`}
-            disabled={isBusy || !hasValidQuantity}
+            disabled={!hasValidQuantity}
             onClick={() => {
               onEditQuantity(parsedQuantity)
               setMode('idle')
@@ -132,7 +128,7 @@ export function RecentLaunchRow({
           </label>
           <Button
             aria-label={`Confirmar troca de ${label}`}
-            disabled={isBusy || !targetTabId}
+            disabled={!targetTabId}
             onClick={() => {
               onReassign(targetTabId)
               setMode('idle')

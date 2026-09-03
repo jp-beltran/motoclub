@@ -22,7 +22,6 @@ export interface RecentLaunch {
 export function listRecentLaunches(
   snapshot: BarDatabase,
   reference: Date,
-  limit: number = RECENT_LAUNCH_LIMIT,
 ): readonly RecentLaunch[] {
   const itemNameById = new Map(snapshot.items.map(({ id, name }) => [id, name]))
   const consumerNameById = new Map(snapshot.consumers.map(({ id, name }) => [id, name]))
@@ -35,7 +34,7 @@ export function listRecentLaunches(
         isSameLocalDay(new Date(consumption.createdAt), reference),
     )
     .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
-    .slice(0, limit)
+    .slice(0, RECENT_LAUNCH_LIMIT)
     .flatMap((consumption) => {
       const tab = tabById.get(consumption.tabId)
       if (!tab) return []

@@ -8,7 +8,6 @@ export interface RecentLaunchesProps {
   readonly onEditQuantity: (consumptionId: string, quantity: number) => void
   readonly onReassign: (consumptionId: string, targetTabId: string) => void
   readonly onCancel: (consumptionId: string) => void
-  readonly busyConsumptionId?: string
 }
 
 /** The day's last launches, so a mistake can be fixed where it is noticed. */
@@ -17,7 +16,6 @@ export function RecentLaunches({
   onEditQuantity,
   onReassign,
   onCancel,
-  busyConsumptionId,
 }: RecentLaunchesProps) {
   const launches = listRecentLaunches(snapshot, new Date())
 
@@ -39,7 +37,6 @@ export function RecentLaunches({
                 key={launch.consumption.id}
                 launch={launch}
                 targets={listReassignTargets(snapshot, launch.consumption)}
-                isBusy={busyConsumptionId === launch.consumption.id}
                 onEditQuantity={(quantity) =>
                   onEditQuantity(launch.consumption.id, quantity)
                 }
