@@ -1,4 +1,5 @@
 export const CONSUMER_KIND = { MEMBER: 'member', VISITOR: 'visitor' } as const
+export const EVENT_STATUS = { ACTIVE: 'active', CLOSED: 'closed' } as const
 export const TAB_KIND = { EVENT: 'event', MONTHLY: 'monthly' } as const
 export const TAB_STATUS = { OPEN: 'open', CLOSED: 'closed' } as const
 export const CONSUMPTION_STATUS = { ACTIVE: 'active', CANCELLED: 'cancelled' } as const
@@ -18,6 +19,7 @@ export const STOCK_MOVEMENT_KIND = {
 export const STOCK_WARNING = { INSUFFICIENT: 'insufficient-stock' } as const
 
 export type ConsumerKind = (typeof CONSUMER_KIND)[keyof typeof CONSUMER_KIND]
+export type EventStatus = (typeof EVENT_STATUS)[keyof typeof EVENT_STATUS]
 export type TabKind = (typeof TAB_KIND)[keyof typeof TAB_KIND]
 export type TabStatus = (typeof TAB_STATUS)[keyof typeof TAB_STATUS]
 export type ConsumptionStatus =

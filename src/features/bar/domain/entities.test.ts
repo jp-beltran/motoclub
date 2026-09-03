@@ -4,6 +4,7 @@ import {
   CHARGE_KIND,
   CONSUMER_KIND,
   CONSUMPTION_STATUS,
+  EVENT_STATUS,
   PAYMENT_TARGET,
   STOCK_MOVEMENT_KIND,
   TAB_KIND,
@@ -24,6 +25,7 @@ import type {
 describe('bar domain entities', () => {
   it('exposes typed status constants for every entity variant', () => {
     expect(CONSUMER_KIND).toEqual({ MEMBER: 'member', VISITOR: 'visitor' })
+    expect(EVENT_STATUS).toEqual({ ACTIVE: 'active', CLOSED: 'closed' })
     expect(TAB_KIND).toEqual({ EVENT: 'event', MONTHLY: 'monthly' })
     expect(TAB_STATUS).toEqual({ OPEN: 'open', CLOSED: 'closed' })
     expect(CONSUMPTION_STATUS).toEqual({ ACTIVE: 'active', CANCELLED: 'cancelled' })
@@ -45,6 +47,27 @@ describe('bar domain entities', () => {
     expectTypeOf<StockMovement>().toBeObject()
     expectTypeOf<MonthlyClosing>().toBeObject()
     expectTypeOf<MemberStatement>().toBeObject()
+  })
+
+  it('supports prototype profile, catalog, stock, and event fields', () => {
+    const consumer: Consumer = {
+      id: 'member-1', name: 'Ana', kind: CONSUMER_KIND.MEMBER,
+      phone: '(11) 99999-0000', active: true,
+    }
+    const item: Item = {
+      id: 'item-1', name: 'Água', code: 'AGUA', category: 'Bebidas', unit: 'un',
+      description: 'Garrafa 500 ml', active: true, favorite: true,
+      unitCostCents: 200, unitPriceCents: 500, stockQuantity: 12,
+    }
+    const event: Event = {
+      id: 'event-1', name: 'Encontro', startsAt: '2026-09-01T12:00:00.000Z',
+      status: EVENT_STATUS.ACTIVE,
+    }
+
+    expect({ consumer, item, event }).toMatchObject({
+      consumer: { active: true }, item: { stockQuantity: 12 },
+      event: { status: EVENT_STATUS.ACTIVE },
+    })
   })
 
   it('prevents invalid tab and consumption lifecycle combinations', () => {

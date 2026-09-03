@@ -2,6 +2,7 @@ import type {
   ChargeKind,
   ConsumerKind,
   ConsumptionStatus,
+  EventStatus,
   PaymentTarget,
   StockMovementKind,
   TabKind,
@@ -12,11 +13,19 @@ export interface Consumer {
   readonly id: string
   readonly name: string
   readonly kind: ConsumerKind
+  readonly phone?: string
+  readonly active?: boolean
 }
 
 export interface Item {
   readonly id: string
   readonly name: string
+  readonly code?: string
+  readonly category?: string
+  readonly unit?: string
+  readonly description?: string
+  readonly active?: boolean
+  readonly favorite?: boolean
   readonly unitCostCents: number
   readonly unitPriceCents: number
   readonly stockQuantity?: number
@@ -27,6 +36,7 @@ export interface Event {
   readonly name: string
   readonly startsAt: string
   readonly endsAt?: string
+  readonly status?: EventStatus
 }
 
 interface TabBase {
