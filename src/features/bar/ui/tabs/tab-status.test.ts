@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
-import { EVENT_STATUS, PAYMENT_STATUS, TAB_STATUS } from '../../domain/constants'
+import { EVENT_STATUS, TAB_STATUS } from '../../domain/constants'
 import type { Event } from '../../domain/entities'
-import { formatPaymentStatusLabel, formatTabStatusLabel, isEventActive } from './tab-status'
+import { formatTabStatusLabel, isEventActive } from './tab-status'
 
 describe('formatTabStatusLabel', () => {
   it('labels an open tab in pt-BR', () => {
@@ -14,19 +14,8 @@ describe('formatTabStatusLabel', () => {
   })
 })
 
-describe('formatPaymentStatusLabel', () => {
-  it('labels unpaid in pt-BR', () => {
-    expect(formatPaymentStatusLabel(PAYMENT_STATUS.UNPAID)).toBe('Não pago')
-  })
-
-  it('labels partial in pt-BR', () => {
-    expect(formatPaymentStatusLabel(PAYMENT_STATUS.PARTIAL)).toBe('Parcial')
-  })
-
-  it('labels paid in pt-BR', () => {
-    expect(formatPaymentStatusLabel(PAYMENT_STATUS.PAID)).toBe('Pago')
-  })
-})
+// formatPaymentStatusLabel moved to application/payment-status.ts, shared
+// with /pagamentos — see application/payment-status.test.ts.
 
 describe('isEventActive', () => {
   const activeEvent: Event = {

@@ -17,6 +17,10 @@ export interface TabCardProps {
   readonly isReopenPending: boolean
   readonly closeErrorMessage?: string
   readonly reopenErrorMessage?: string
+  /** Called when the close confirmation is (re)opened, so the caller can clear a stale error from a previous attempt before it is shown again. */
+  readonly onStartClose?: () => void
+  /** Called when the reopen confirmation is (re)opened, so the caller can clear a stale error from a previous attempt before it is shown again. */
+  readonly onStartReopen?: () => void
 }
 
 type ConfirmMode = 'idle' | 'confirm-close' | 'confirm-reopen'
@@ -36,6 +40,8 @@ export function TabCard({
   isReopenPending,
   closeErrorMessage,
   reopenErrorMessage,
+  onStartClose,
+  onStartReopen,
 }: TabCardProps) {
   const [mode, setMode] = useState<ConfirmMode>('idle')
   const { tab, consumer, lines, courtesyLines, totalCents, payment } = summary
@@ -73,6 +79,7 @@ export function TabCard({
           isPending={isClosePending}
           errorMessage={closeErrorMessage}
           onConfirm={() => onClose(tab.id)}
+          onStart={onStartClose}
         />
       ) : eventActive ? (
         <ReopenAction
@@ -81,6 +88,7 @@ export function TabCard({
           isPending={isReopenPending}
           errorMessage={reopenErrorMessage}
           onConfirm={() => onReopen(tab.id)}
+          onStart={onStartReopen}
         />
       ) : (
         <p className="text-sm text-content-muted">
@@ -123,12 +131,20 @@ interface CloseActionProps {
   readonly isPending: boolean
   readonly errorMessage?: string
   readonly onConfirm: () => void
+  readonly onStart?: () => void
 }
 
-function CloseAction({ mode, setMode, totalCents, isPending, errorMessage, onConfirm }: CloseActionProps) {
+function CloseAction({ mode, setMode, totalCents, isPending, errorMessage, onConfirm, onStart }: CloseActionProps) {
   if (mode !== 'confirm-close') {
     return (
-      <Button variant="ghost" onClick={() => setMode('confirm-close')} className="self-start">
+      <Button
+        variant="ghost"
+        onClick={() => {
+          onStart?.()
+          setMode('confirm-close')
+        }}
+        className="self-start"
+      >
         Fechar comanda
       </Button>
     )
@@ -162,12 +178,20 @@ interface ReopenActionProps {
   readonly isPending: boolean
   readonly errorMessage?: string
   readonly onConfirm: () => void
+  readonly onStart?: () => void
 }
 
-function ReopenAction({ mode, setMode, isPending, errorMessage, onConfirm }: ReopenActionProps) {
+function ReopenAction({ mode, setMode, isPending, errorMessage, onConfirm, onStart }: ReopenActionProps) {
   if (mode !== 'confirm-reopen') {
     return (
-      <Button variant="ghost" onClick={() => setMode('confirm-reopen')} className="self-start">
+      <Button
+        variant="ghost"
+        onClick={() => {
+          onStart?.()
+          setMode('confirm-reopen')
+        }}
+        className="self-start"
+      >
         Reabrir comanda
       </Button>
     )

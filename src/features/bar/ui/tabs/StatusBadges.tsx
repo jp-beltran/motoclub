@@ -1,5 +1,6 @@
-import { PAYMENT_STATUS, TAB_STATUS, type PaymentStatus, type TabStatus } from '../../domain/constants'
-import { formatPaymentStatusLabel, formatTabStatusLabel } from './tab-status'
+import { TAB_STATUS, type PaymentStatus, type TabStatus } from '../../domain/constants'
+import { formatPaymentStatusLabel, getPaymentStatusTone } from '../../application/payment-status'
+import { formatTabStatusLabel } from './tab-status'
 
 export interface TabStatusBadgeProps {
   readonly status: TabStatus
@@ -15,16 +16,14 @@ export interface PaymentStatusBadgeProps {
   readonly status: PaymentStatus
 }
 
-const PAYMENT_STATUS_TONE: Record<PaymentStatus, string> = {
-  [PAYMENT_STATUS.UNPAID]: 'text-accent',
-  [PAYMENT_STATUS.PARTIAL]: 'text-warning',
-  [PAYMENT_STATUS.PAID]: 'text-positive',
-}
-
-/** Always paired with its pt-BR text — color alone never carries the state. */
+/**
+ * Always paired with its pt-BR text — color alone never carries the state.
+ * Label and tone come from application/payment-status.ts, shared with
+ * /pagamentos so the same status never renders in two different colors.
+ */
 export function PaymentStatusBadge({ status }: PaymentStatusBadgeProps) {
   return (
-    <span className={`text-sm font-semibold ${PAYMENT_STATUS_TONE[status]}`}>
+    <span className={`text-sm font-semibold ${getPaymentStatusTone(status)}`}>
       {formatPaymentStatusLabel(status)}
     </span>
   )

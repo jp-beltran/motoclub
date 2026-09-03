@@ -51,6 +51,26 @@ describe('PagamentosView', () => {
     expect(await screen.findByText(/Nenhuma pendência/)).toBeInTheDocument()
   })
 
+  it('discloses that current-month member debt only appears here after the monthly closing, and links to /fechamento', async () => {
+    renderWithBar(<PagamentosView />)
+    await screen.findByText(/Rafael Oliveira/)
+
+    expect(screen.getAllByText(/fechamento mensal/i).length).toBeGreaterThan(0)
+    expect(screen.getByRole('link', { name: /fechamento/i })).toHaveAttribute('href', '/fechamento')
+  })
+
+  it('shows the same disclosure even when the pending list is empty, not just when it has rows', async () => {
+    const repository = createFakeBarRepository(
+      {},
+      { ...createDemoDatabase(), tabs: [], consumptions: [], payments: [], memberStatements: [] },
+    )
+    renderWithBar(<PagamentosView />, { repository })
+    await screen.findByText(/Nenhuma pendência/)
+
+    expect(screen.getAllByText(/fechamento mensal/i).length).toBeGreaterThan(0)
+    expect(screen.getByRole('link', { name: /fechamento/i })).toHaveAttribute('href', '/fechamento')
+  })
+
   it('records a partial payment on an event tab and leaves it partial with the right remaining balance', async () => {
     const repository = createRealRepository()
     const user = userEvent.setup()

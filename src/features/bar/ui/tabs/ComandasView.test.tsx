@@ -119,6 +119,54 @@ describe('ComandasView', () => {
     expect(alert).toHaveTextContent('Só é possível fechar ou reabrir comandas de um evento ativo.')
   })
 
+  it('clears a stale close error when the confirmation is reopened, before any new attempt', async () => {
+    const repository = createFakeBarRepository(
+      {
+        closeVisitorTab: vi.fn(async () => {
+          throw new Error('Event must be active')
+        }),
+      },
+      createDemoDatabase(),
+    )
+    const user = userEvent.setup()
+    renderWithBar(<ComandasView />, { repository })
+
+    const heading = await screen.findByRole('heading', { name: 'Encontro de setembro' })
+    const section = heading.closest('section') as HTMLElement
+    const rafaelCard = within(section).getByText('Rafael Oliveira').closest('div.rounded-lg') as HTMLElement
+
+    await user.click(within(rafaelCard).getByRole('button', { name: 'Fechar comanda' }))
+    await user.click(within(rafaelCard).getByRole('button', { name: 'Confirmar fechamento' }))
+    await within(rafaelCard).findByRole('alert')
+
+    await user.click(within(rafaelCard).getByRole('button', { name: 'Cancelar' }))
+    await user.click(within(rafaelCard).getByRole('button', { name: 'Fechar comanda' }))
+
+    // The old error must not reappear before the operator has retried anything.
+    expect(within(rafaelCard).queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('shows the payment badge for its state right after closing a partially paid tab', async () => {
+    const repository = createRealRepository()
+    const user = userEvent.setup()
+    renderWithBar(<ComandasView />, { repository })
+
+    const heading = await screen.findByRole('heading', { name: 'Encontro de setembro' })
+    const section = heading.closest('section') as HTMLElement
+    const rafaelCard = within(section).getByText('Rafael Oliveira').closest('div.rounded-lg') as HTMLElement
+
+    // tab-rafael-evento: total 1200, already paid 700 -> Parcial, before closing.
+    expect(within(rafaelCard).getByText('Parcial')).toBeInTheDocument()
+
+    await user.click(within(rafaelCard).getByRole('button', { name: 'Fechar comanda' }))
+    await user.click(within(rafaelCard).getByRole('button', { name: 'Confirmar fechamento' }))
+
+    await waitFor(() => expect(within(rafaelCard).getByText('Fechada')).toBeInTheDocument())
+    // Closing never settles the debt — the payment badge must still say Parcial.
+    expect(within(rafaelCard).getByText('Parcial')).toBeInTheDocument()
+    expect(within(rafaelCard).getByText('Saldo em aberto: R$ 5,00')).toBeInTheDocument()
+  })
+
   it('does not offer a reopen action for a closed tab whose event is no longer active', async () => {
     const database = createDemoDatabase()
     database.consumers.push({

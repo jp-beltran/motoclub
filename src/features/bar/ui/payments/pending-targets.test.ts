@@ -11,7 +11,7 @@ import {
   TAB_STATUS,
 } from '../../domain/constants'
 import type { Consumption, MemberStatement, Payment } from '../../domain/entities'
-import { listPendingTargets } from './pending-targets'
+import { formatPendingTargetKindLabel, listPendingTargets } from './pending-targets'
 
 function consumption(overrides: Partial<Consumption> & { readonly id: string }): Consumption {
   return {
@@ -142,5 +142,37 @@ describe('listPendingTargets', () => {
     const rafael = targets.find((target) => target.targetId === 'tab-rafael')
 
     expect(rafael?.payments.map((payment) => payment.id)).toEqual(['p2', 'p1'])
+  })
+
+  it('includes a CLOSED event tab with an outstanding balance — closing a tab does not settle its debt', () => {
+    const database = baseDatabase()
+    database.consumers.push({
+      id: 'visitor-carlos', name: 'Carlos Souza', kind: CONSUMER_KIND.VISITOR, active: true,
+    })
+    database.tabs.push({
+      id: 'tab-carlos', kind: TAB_KIND.EVENT, status: TAB_STATUS.CLOSED,
+      eventId: 'event-setembro', visitorId: 'visitor-carlos',
+      openedAt: '2026-09-19T18:30:00.000Z', closedAt: '2026-09-19T22:00:00.000Z',
+    })
+    database.consumptions.push(
+      consumption({ id: 'c-carlos', tabId: 'tab-carlos', consumerId: 'visitor-carlos', quantity: 1 }),
+    )
+
+    const targets = listPendingTargets(database)
+    const carlos = targets.find((target) => target.targetId === 'tab-carlos')
+
+    expect(carlos).toBeDefined()
+    expect(carlos?.totalCents).toBe(700)
+    expect(carlos?.payment.remainingCents).toBe(700)
+  })
+})
+
+describe('formatPendingTargetKindLabel', () => {
+  it('labels a tab target as "Comanda"', () => {
+    expect(formatPendingTargetKindLabel(PAYMENT_TARGET.TAB)).toBe('Comanda')
+  })
+
+  it('labels a statement target as "Extrato mensal"', () => {
+    expect(formatPendingTargetKindLabel(PAYMENT_TARGET.STATEMENT)).toBe('Extrato mensal')
   })
 })
