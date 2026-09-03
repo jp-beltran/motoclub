@@ -169,25 +169,87 @@ describe('getConsumerOutstandingCents', () => {
     expect(getConsumerOutstandingCents(snapshot, RAFAEL, '2026-09')).toBe(2100)
   })
 
-  it("excludes a visitor's closed event tab from the total", () => {
-    const openTab: Tab = {
-      id: 'tab-rafael-open', kind: TAB_KIND.EVENT, status: TAB_STATUS.OPEN,
-      eventId: 'event-1', visitorId: RAFAEL.id, openedAt: '2026-09-19T18:00:00.000Z',
-    }
+  it(
+    'sums an open and a closed event tab together — closing a tab does not settle it, ' +
+      'so a closed tab still contributes what it owes',
+    () => {
+      const openTab: Tab = {
+        id: 'tab-rafael-open', kind: TAB_KIND.EVENT, status: TAB_STATUS.OPEN,
+        eventId: 'event-1', visitorId: RAFAEL.id, openedAt: '2026-09-19T18:00:00.000Z',
+      }
+      const closedTab: Tab = {
+        id: 'tab-rafael-closed', kind: TAB_KIND.EVENT, status: TAB_STATUS.CLOSED,
+        eventId: 'event-2', visitorId: RAFAEL.id, openedAt: '2026-09-05T18:00:00.000Z',
+        closedAt: '2026-09-06T02:00:00.000Z',
+      }
+      const snapshot = database({
+        tabs: [openTab, closedTab],
+        consumptions: [
+          consumption({ id: 'c1', tabId: openTab.id, consumerId: RAFAEL.id, quantity: 1 }),
+          consumption({ id: 'c2', tabId: closedTab.id, consumerId: RAFAEL.id, quantity: 9 }),
+        ],
+      })
+
+      expect(getConsumerOutstandingCents(snapshot, RAFAEL, '2026-09')).toBe(7000)
+    },
+  )
+
+  it('excludes a closed event tab that was paid in full', () => {
     const closedTab: Tab = {
       id: 'tab-rafael-closed', kind: TAB_KIND.EVENT, status: TAB_STATUS.CLOSED,
-      eventId: 'event-2', visitorId: RAFAEL.id, openedAt: '2026-09-05T18:00:00.000Z',
-      closedAt: '2026-09-06T02:00:00.000Z',
+      eventId: 'event-1', visitorId: RAFAEL.id, openedAt: '2026-09-19T18:00:00.000Z',
+      closedAt: '2026-09-19T22:00:00.000Z',
+    }
+    const payment: Payment = {
+      id: 'payment-1', target: PAYMENT_TARGET.TAB, targetId: closedTab.id,
+      amountCents: 1400, paidAt: '2026-09-19T22:05:00.000Z', actorId: 'admin-demo',
     }
     const snapshot = database({
-      tabs: [openTab, closedTab],
+      tabs: [closedTab],
       consumptions: [
-        consumption({ id: 'c1', tabId: openTab.id, consumerId: RAFAEL.id, quantity: 1 }),
-        consumption({ id: 'c2', tabId: closedTab.id, consumerId: RAFAEL.id, quantity: 9 }),
+        consumption({ id: 'c1', tabId: closedTab.id, consumerId: RAFAEL.id, quantity: 2 }),
+      ],
+      payments: [payment],
+    })
+
+    expect(getConsumerOutstandingCents(snapshot, RAFAEL, '2026-09')).toBe(0)
+  })
+
+  it('contributes only the remainder for a closed event tab that was partially paid', () => {
+    const closedTab: Tab = {
+      id: 'tab-rafael-closed', kind: TAB_KIND.EVENT, status: TAB_STATUS.CLOSED,
+      eventId: 'event-1', visitorId: RAFAEL.id, openedAt: '2026-09-19T18:00:00.000Z',
+      closedAt: '2026-09-19T22:00:00.000Z',
+    }
+    const payment: Payment = {
+      id: 'payment-1', target: PAYMENT_TARGET.TAB, targetId: closedTab.id,
+      amountCents: 500, paidAt: '2026-09-19T22:05:00.000Z', actorId: 'admin-demo',
+    }
+    const snapshot = database({
+      tabs: [closedTab],
+      consumptions: [
+        consumption({ id: 'c1', tabId: closedTab.id, consumerId: RAFAEL.id, quantity: 2 }),
+      ],
+      payments: [payment],
+    })
+
+    expect(getConsumerOutstandingCents(snapshot, RAFAEL, '2026-09')).toBe(900)
+  })
+
+  it('contributes its whole total for a closed event tab that was never paid', () => {
+    const closedTab: Tab = {
+      id: 'tab-rafael-closed', kind: TAB_KIND.EVENT, status: TAB_STATUS.CLOSED,
+      eventId: 'event-1', visitorId: RAFAEL.id, openedAt: '2026-09-19T18:00:00.000Z',
+      closedAt: '2026-09-19T22:00:00.000Z',
+    }
+    const snapshot = database({
+      tabs: [closedTab],
+      consumptions: [
+        consumption({ id: 'c1', tabId: closedTab.id, consumerId: RAFAEL.id, quantity: 2 }),
       ],
     })
 
-    expect(getConsumerOutstandingCents(snapshot, RAFAEL, '2026-09')).toBe(700)
+    expect(getConsumerOutstandingCents(snapshot, RAFAEL, '2026-09')).toBe(1400)
   })
 
   it("subtracts payments already made against a visitor's event tab", () => {
