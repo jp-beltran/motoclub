@@ -25,7 +25,9 @@ describe('DashboardStats', () => {
     expect(screen.getByText('Recebido')).toBeInTheDocument()
     expect(screen.getByText('R$ 700,00')).toBeInTheDocument()
 
-    expect(screen.getByText('Pendente')).toBeInTheDocument()
+    // "Pendente (total)" — not "Pendente" — because the tile is a total in
+    // arrears across the whole system, not scoped to the queried month.
+    expect(screen.getByText('Pendente (total)')).toBeInTheDocument()
     expect(screen.getByText('R$ 534,56')).toBeInTheDocument()
 
     expect(screen.getByText('Custo')).toBeInTheDocument()
