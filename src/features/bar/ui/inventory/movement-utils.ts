@@ -57,3 +57,26 @@ export function sortMovementsDescending(
     (a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime(),
   )
 }
+
+const FALLBACK_MOVEMENT_ERROR_MESSAGE =
+  'Não foi possível registrar a movimentação. Tente novamente.'
+
+// addStockMovement (local-bar-repository.ts) only ever throws a plain Error
+// with one of these English messages. The repository is not this area's to
+// change, so this maps its known messages to pt-BR sentences at the UI
+// boundary and falls back to a generic pt-BR message for anything else.
+const MOVEMENT_ERROR_MESSAGES: Record<string, string> = {
+  'Item does not track stock': 'Este item não possui controle de estoque.',
+  'Item not found': 'Item não encontrado. Atualize a página e tente novamente.',
+  'Stock entry quantity must be positive': 'A quantidade de entrada deve ser maior que zero.',
+  'Stock movement quantity must be a non-zero safe integer':
+    'Informe uma quantidade válida.',
+  'Stock quantity must be a safe integer': 'A quantidade resultante do estoque é inválida.',
+}
+
+export function describeMovementError(error: unknown): string {
+  if (error instanceof Error && error.message in MOVEMENT_ERROR_MESSAGES) {
+    return MOVEMENT_ERROR_MESSAGES[error.message]
+  }
+  return FALLBACK_MOVEMENT_ERROR_MESSAGE
+}
