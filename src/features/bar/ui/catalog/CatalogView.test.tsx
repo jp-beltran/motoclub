@@ -1,13 +1,12 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, within } from '@testing-library/react'
+import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 
 import { LOW_STOCK_THRESHOLD } from '../../application/constants'
-import { BarRepositoryProvider } from '../../application/repository-context'
 import type { Item } from '../../domain/entities'
 import { createDemoDatabase } from '../../infrastructure/demo-seed'
 import { createFakeBarRepository } from '../../../../test/fake-bar-repository'
+import { renderWithBar } from '../../../../test/render-with-bar'
 import { CatalogView } from './CatalogView'
 
 function makeItem(overrides: Partial<Item> = {}): Item {
@@ -29,14 +28,7 @@ function makeItem(overrides: Partial<Item> = {}): Item {
 function renderCatalog(items: Item[]) {
   const database = { ...createDemoDatabase(), items }
   const repository = createFakeBarRepository({}, database)
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <BarRepositoryProvider repository={repository}>
-        <CatalogView />
-      </BarRepositoryProvider>
-    </QueryClientProvider>,
-  )
+  return renderWithBar(<CatalogView />, { repository })
 }
 
 describe('CatalogView', () => {
