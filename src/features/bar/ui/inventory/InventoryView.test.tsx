@@ -79,6 +79,18 @@ function renderInventory(repository: BarRepository) {
   return renderWithBar(<InventoryView />, { repository })
 }
 
+describe('InventoryView adjustment guidance', () => {
+  it('says what a negative balance means before the operator creates one', async () => {
+    renderWithBar(<InventoryView />)
+
+    await userEvent.click(await screen.findByLabelText('Ajuste'))
+
+    expect(
+      screen.getByText(/Se o saldo ficar negativo, o item fica marcado como déficit/),
+    ).toBeInTheDocument()
+  })
+})
+
 describe('InventoryView', () => {
   it('gives both movement-kind radios a visible focus-visible ring', async () => {
     const beer = makeItem({ stockQuantity: 10 })

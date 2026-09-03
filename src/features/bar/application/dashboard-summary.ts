@@ -4,8 +4,8 @@ import { calculateFinancials } from '../domain/financials'
 import { getMonthKey } from '../domain/month'
 import { addCents } from '../domain/money'
 import type { BarDatabase } from './bar-repository'
-import { LOW_STOCK_THRESHOLD } from './constants'
 import { calculateOutstandingCents } from './outstanding'
+import { isLowStock } from './stock-levels'
 
 export interface DashboardSummary {
   readonly revenueCents: number
@@ -56,7 +56,7 @@ export function summarizeDashboard(snapshot: BarDatabase, month: string): Dashbo
 
   const openTabsCount = snapshot.tabs.filter((tab) => tab.status === TAB_STATUS.OPEN).length
   const lowStockItems = snapshot.items.filter(
-    (item) => item.stockQuantity !== undefined && item.stockQuantity <= LOW_STOCK_THRESHOLD,
+    (item) => item.stockQuantity !== undefined && isLowStock(item.stockQuantity),
   )
 
   return {

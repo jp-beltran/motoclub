@@ -31,6 +31,14 @@ describe('StockStatusBadge', () => {
     expect(badge.className).toContain('text-warning')
   })
 
+  it('separates a deficit from a merely low balance by tone as well as text', () => {
+    render(<StockStatusBadge item={makeItem({ stockQuantity: -7 })} />)
+
+    const badge = screen.getByText('-7 (déficit — ajuste o estoque)')
+    expect(badge.className).toContain('text-accent')
+    expect(badge.className).not.toContain('text-warning')
+  })
+
   it('does not mark an item above the threshold as critical', () => {
     render(<StockStatusBadge item={makeItem({ stockQuantity: LOW_STOCK_THRESHOLD + 10 })} />)
 
