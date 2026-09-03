@@ -1,7 +1,8 @@
 import type { BarDatabase } from '../../application/bar-repository'
-import { listReassignTargets } from './consumer-tab'
+import { listReassignTargets } from '../../application/consumer-tab'
+import { RECENT_LAUNCH_LIMIT } from '../../application/constants'
+import { listRecentLaunches } from '../../application/recent-launches'
 import { RecentLaunchRow } from './RecentLaunchRow'
-import { RECENT_LAUNCH_LIMIT, listRecentLaunches } from './recent-launches'
 
 export interface RecentLaunchesProps {
   readonly snapshot: BarDatabase

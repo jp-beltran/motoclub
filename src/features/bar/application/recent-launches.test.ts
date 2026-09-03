@@ -1,15 +1,16 @@
 import { describe, expect, it } from 'vitest'
 
-import type { BarDatabase } from '../../application/bar-repository'
+import type { BarDatabase } from './bar-repository'
 import {
   CHARGE_KIND,
   CONSUMPTION_STATUS,
   TAB_KIND,
   TAB_STATUS,
-} from '../../domain/constants'
-import type { Consumption } from '../../domain/entities'
-import { createDemoDatabase } from '../../infrastructure/demo-seed'
-import { RECENT_LAUNCH_LIMIT, listRecentLaunches } from './recent-launches'
+} from '../domain/constants'
+import type { Consumption } from '../domain/entities'
+import { createDemoDatabase } from '../infrastructure/demo-seed'
+import { RECENT_LAUNCH_LIMIT } from './constants'
+import { listRecentLaunches } from './recent-launches'
 
 const TODAY = new Date(2026, 8, 19, 21, 0)
 

@@ -1,7 +1,7 @@
-import { getActiveEvent } from '../../application/active-event'
-import type { BarDatabase } from '../../application/bar-repository'
-import { CONSUMER_KIND, TAB_KIND, TAB_STATUS } from '../../domain/constants'
-import type { Consumer, Consumption, Tab } from '../../domain/entities'
+import { getActiveEvent } from './active-event'
+import type { BarDatabase } from './bar-repository'
+import { CONSUMER_KIND, TAB_KIND, TAB_STATUS } from '../domain/constants'
+import type { Consumer, Consumption, Tab } from '../domain/entities'
 
 /** Why a selected consumer cannot receive new consumption right now. */
 export type LaunchBlockReason =
@@ -14,7 +14,12 @@ export type ConsumerTabResolution =
   | { readonly kind: 'ready'; readonly tab: Tab }
   /** No tab yet — the repository opens one on the first launch. */
   | { readonly kind: 'pending' }
-  | { readonly kind: 'blocked'; readonly reason: LaunchBlockReason }
+  /**
+   * No launch is possible. The tab is carried when one exists, because a
+   * closed tab still holds a balance the operator has to be able to read.
+   * Only `no-active-event` has no tab at all.
+   */
+  | { readonly kind: 'blocked'; readonly reason: LaunchBlockReason; readonly tab?: Tab }
 
 export interface ReassignTarget {
   readonly tabId: string
@@ -50,7 +55,7 @@ function resolveMonthlyTab(
   if (!tab) return { kind: 'pending' }
   return tab.status === TAB_STATUS.OPEN
     ? { kind: 'ready', tab }
-    : { kind: 'blocked', reason: 'monthly-tab-closed' }
+    : { kind: 'blocked', reason: 'monthly-tab-closed', tab }
 }
 
 function resolveEventTab(snapshot: BarDatabase, visitor: Consumer): ConsumerTabResolution {
@@ -66,7 +71,25 @@ function resolveEventTab(snapshot: BarDatabase, visitor: Consumer): ConsumerTabR
   if (!tab) return { kind: 'pending' }
   return tab.status === TAB_STATUS.OPEN
     ? { kind: 'ready', tab }
-    : { kind: 'blocked', reason: 'event-tab-closed' }
+    : { kind: 'blocked', reason: 'event-tab-closed', tab }
+}
+
+/**
+ * The tab a resolution points at, if any. A blocked resolution can still have
+ * one, so the balance stays readable when launching is not.
+ */
+export function getResolvedTab(resolution: ConsumerTabResolution): Tab | undefined {
+  return resolution.kind === 'pending' ? undefined : resolution.tab
+}
+
+/**
+ * Whether opening the tab panel would tell the truth. It would for an open
+ * tab, for a closed one that still owes money, and for a member with no tab
+ * yet (nothing consumed). It would not when no event is active, because then
+ * no visitor tab exists to describe.
+ */
+export function hasViewableTab(resolution: ConsumerTabResolution): boolean {
+  return resolution.kind !== 'blocked' || resolution.tab !== undefined
 }
 
 /**

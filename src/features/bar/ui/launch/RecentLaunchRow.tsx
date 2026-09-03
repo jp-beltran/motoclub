@@ -1,7 +1,7 @@
 import { useState } from 'react'
 
-import type { ReassignTarget } from './consumer-tab'
-import type { RecentLaunch } from './recent-launches'
+import type { ReassignTarget } from '../../application/consumer-tab'
+import type { RecentLaunch } from '../../application/recent-launches'
 import { formatCents, formatDateTime, formatQuantity } from '../../../../shared/format'
 import { Button } from '../../../../shared/ui/Button'
 

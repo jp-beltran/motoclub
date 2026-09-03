@@ -329,6 +329,44 @@ describe('LaunchScreen tab availability', () => {
     expect(launchedConsumptions(await repository.getSnapshot())).toHaveLength(0)
   })
 
+  it('shows the real balance of a closed monthly tab instead of calling it empty', async () => {
+    const database = currentMonthDemo()
+    const repository = createRepository({
+      ...database,
+      tabs: database.tabs.map((tab) =>
+        tab.id === 'tab-ana-2026-09'
+          ? { ...tab, status: TAB_STATUS.CLOSED, closedAt: '2026-09-30T23:00:00.000Z' }
+          : tab,
+      ),
+    })
+    const { click } = setupCountingUser()
+    renderWithBar(<LancamentosPage />, { repository, route: '/lancamentos' })
+
+    await click(await screen.findByRole('button', { name: /Ana Paula/ }))
+    await click(screen.getByRole('button', { name: 'Ver comanda' }))
+    const panel = screen.getByRole('complementary', { name: 'Comanda de Ana Paula' })
+
+    // The seeded 3x cerveja at R$ 7,00 is still owed even though the tab is
+    // closed. Claiming the tab is empty would be the opposite of the truth.
+    expect(panel).not.toHaveTextContent('Nenhum consumo lançado ainda.')
+    expect(within(panel).getByRole('listitem')).toHaveTextContent('3× Cerveja lata')
+    expect(within(panel).getByText('Total').parentElement).toHaveTextContent('R$ 21,00')
+  })
+
+  it('offers no tab panel for a visitor when no event is active', async () => {
+    const database = currentMonthDemo()
+    const repository = createRepository({
+      ...database,
+      events: database.events.map((event) => ({ ...event, status: EVENT_STATUS.CLOSED })),
+    })
+    const { click } = setupCountingUser()
+    renderWithBar(<LancamentosPage />, { repository, route: '/lancamentos' })
+
+    await click(await screen.findByRole('button', { name: /Rafael Oliveira/ }))
+
+    expect(screen.queryByRole('button', { name: 'Ver comanda' })).not.toBeInTheDocument()
+  })
+
   it('explains a closed visitor tab instead of failing on the tap', async () => {
     const database = currentMonthDemo()
     const repository = createRepository({

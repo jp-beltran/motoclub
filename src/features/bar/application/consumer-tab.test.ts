@@ -1,15 +1,15 @@
 import { describe, expect, it } from 'vitest'
 
-import type { BarDatabase } from '../../application/bar-repository'
+import type { BarDatabase } from './bar-repository'
 import {
   CONSUMER_KIND,
   EVENT_STATUS,
   TAB_KIND,
   TAB_STATUS,
-} from '../../domain/constants'
-import type { Consumer, Tab } from '../../domain/entities'
-import { createDemoDatabase } from '../../infrastructure/demo-seed'
-import { listReassignTargets, resolveConsumerTab } from './consumer-tab'
+} from '../domain/constants'
+import type { Consumer, Tab } from '../domain/entities'
+import { createDemoDatabase } from '../infrastructure/demo-seed'
+import { hasViewableTab, listReassignTargets, resolveConsumerTab } from './consumer-tab'
 
 const ANA: Consumer = {
   id: 'member-ana', name: 'Ana Paula', kind: CONSUMER_KIND.MEMBER, active: true,
@@ -45,8 +45,12 @@ describe('resolveConsumerTab', () => {
       openedAt: '2026-09-01T12:00:00.000Z', closedAt: '2026-09-30T23:00:00.000Z',
     }])
 
+    // The tab comes back with the block: it still holds a real balance, and
+    // the panel must be able to show it instead of claiming the tab is empty.
     expect(resolveConsumerTab(snapshot, ANA, '2026-09')).toEqual({
-      kind: 'blocked', reason: 'monthly-tab-closed',
+      kind: 'blocked',
+      reason: 'monthly-tab-closed',
+      tab: snapshot.tabs.find(({ id }) => id === 'tab-ana-2026-09'),
     })
   })
 
@@ -82,7 +86,9 @@ describe('resolveConsumerTab', () => {
     }])
 
     expect(resolveConsumerTab(snapshot, RAFAEL, '2026-09')).toEqual({
-      kind: 'blocked', reason: 'event-tab-closed',
+      kind: 'blocked',
+      reason: 'event-tab-closed',
+      tab: snapshot.tabs.find(({ id }) => id === 'tab-rafael-evento'),
     })
   })
 })
@@ -141,5 +147,39 @@ describe('listReassignTargets', () => {
     expect(listReassignTargets(snapshot, consumption)).toEqual([
       { tabId: 'tab-bruno-2026-09', consumerName: 'Bruno Santos' },
     ])
+  })
+})
+
+describe('hasViewableTab', () => {
+  it('offers the panel for an open tab and for a member with none yet', () => {
+    const snapshot = createDemoDatabase()
+
+    expect(hasViewableTab(resolveConsumerTab(snapshot, ANA, '2026-09'))).toBe(true)
+    expect(hasViewableTab(resolveConsumerTab(snapshot, ANA, '2026-10'))).toBe(true)
+  })
+
+  it('still offers the panel for a closed tab, which holds a balance', () => {
+    const closedMonthly = withTabs([{
+      id: 'tab-ana-2026-09', kind: TAB_KIND.MONTHLY, status: TAB_STATUS.CLOSED,
+      memberId: 'member-ana', month: '2026-09',
+      openedAt: '2026-09-01T12:00:00.000Z', closedAt: '2026-09-30T23:00:00.000Z',
+    }])
+    const closedEvent = withTabs([{
+      id: 'tab-rafael-evento', kind: TAB_KIND.EVENT, status: TAB_STATUS.CLOSED,
+      eventId: 'event-setembro', visitorId: 'visitor-rafael',
+      openedAt: '2026-09-19T18:10:00.000Z', closedAt: '2026-09-19T22:00:00.000Z',
+    }])
+
+    expect(hasViewableTab(resolveConsumerTab(closedMonthly, ANA, '2026-09'))).toBe(true)
+    expect(hasViewableTab(resolveConsumerTab(closedEvent, RAFAEL, '2026-09'))).toBe(true)
+  })
+
+  it('withholds the panel when no event is active, since there is no tab', () => {
+    const snapshot = createDemoDatabase()
+    snapshot.events = snapshot.events.map((event) => ({
+      ...event, status: EVENT_STATUS.CLOSED,
+    }))
+
+    expect(hasViewableTab(resolveConsumerTab(snapshot, RAFAEL, '2026-09'))).toBe(false)
   })
 })

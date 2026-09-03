@@ -1,9 +1,8 @@
-import type { BarDatabase } from '../../application/bar-repository'
-import { CHARGE_KIND, CONSUMPTION_STATUS } from '../../domain/constants'
-import type { ActiveConsumption, Tab } from '../../domain/entities'
-import { getConsumptionLineTotalCents } from '../../domain/financials'
-
-export const RECENT_LAUNCH_LIMIT = 10
+import type { BarDatabase } from './bar-repository'
+import { RECENT_LAUNCH_LIMIT } from './constants'
+import { CHARGE_KIND, CONSUMPTION_STATUS } from '../domain/constants'
+import type { ActiveConsumption, Tab } from '../domain/entities'
+import { getConsumptionLineTotalCents } from '../domain/financials'
 
 export interface RecentLaunch {
   readonly consumption: ActiveConsumption
