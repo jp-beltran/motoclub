@@ -51,7 +51,9 @@ describe('DashboardPage', () => {
 
     render(<DashboardPage />, { wrapper: createWrapper(repository) })
 
-    expect(await screen.findByText('5')).toBeInTheDocument()
+    // Ruling 28: the card counts open *event* tabs, matching /comandas —
+    // the seed's two visitor tabs, not its five tabs of every kind.
+    expect(await screen.findByText('2')).toBeInTheDocument()
     expect(screen.getByText('Comandas abertas')).toBeInTheDocument()
     expect(screen.getByText('Nenhum item em estoque crítico')).toBeInTheDocument()
   })

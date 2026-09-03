@@ -1,4 +1,4 @@
-import { TAB_STATUS } from '../domain/constants'
+import { TAB_KIND, TAB_STATUS } from '../domain/constants'
 import type { Item } from '../domain/entities'
 import { calculateFinancials } from '../domain/financials'
 import { getMonthKey } from '../domain/month'
@@ -39,8 +39,13 @@ export interface DashboardSummary {
  *   per-consumer rule `/consumidores` prints row by row, summed. Sharing it
  *   is what stops the headline and the rows from disagreeing about the same
  *   money (Ruling 27).
- * - `openTabsCount` counts tabs that are open *right now*, regardless of
- *   kind or month; a closed tab (settled or not) never counts.
+ * - `openTabsCount` counts **event** tabs open right now; a closed tab
+ *   (settled or not) never counts, and neither does a monthly tab. The card
+ *   is labelled "Comandas abertas" and links to `/comandas`, which lists
+ *   event tabs only — counting monthly tabs made the panel say 5 while the
+ *   screen it links to showed 2. A monthly tab is open all month by its
+ *   nature, so it is noise here; the number a manager acts on is how many
+ *   visitors have a tab running right now (Ruling 28).
  */
 export function summarizeDashboard(snapshot: BarDatabase, month: string): DashboardSummary {
   const scopedConsumptions = snapshot.consumptions.filter(
@@ -54,7 +59,9 @@ export function summarizeDashboard(snapshot: BarDatabase, month: string): Dashbo
 
   const pendingCents = calculateOutstandingCents(snapshot)
 
-  const openTabsCount = snapshot.tabs.filter((tab) => tab.status === TAB_STATUS.OPEN).length
+  const openTabsCount = snapshot.tabs.filter(
+    (tab) => tab.kind === TAB_KIND.EVENT && tab.status === TAB_STATUS.OPEN,
+  ).length
   const lowStockItems = snapshot.items.filter(
     (item) => item.stockQuantity !== undefined && isLowStock(item.stockQuantity),
   )
