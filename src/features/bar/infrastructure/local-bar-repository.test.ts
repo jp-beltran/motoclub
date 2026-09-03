@@ -10,6 +10,8 @@ import {
   TAB_KIND,
   TAB_STATUS,
 } from '../domain/constants'
+import { getMonthKey } from '../domain/month'
+import { getCurrentMonth } from '../../../shared/date'
 import type { StorageLike } from '../application/bar-repository'
 import {
   BarPersistenceError,
@@ -31,15 +33,33 @@ class MemoryStorage implements StorageLike {
   }
 }
 
-const createRepository = (storage = new MemoryStorage()) => {
+const DEFAULT_NOW = '2026-09-20T15:00:00.000Z'
+
+const createRepository = (storage = new MemoryStorage(), now = DEFAULT_NOW) => {
   let id = 0
   const repository = new LocalBarRepository({
     storage,
     storageKey: 'test-bar',
     nextId: () => `new-${++id}`,
-    now: () => '2026-09-20T15:00:00.000Z',
+    now: () => now,
   })
   return { repository, storage }
+}
+
+/**
+ * A member with no monthly tab in the seed, so ensureMonthlyTab has to create
+ * one instead of reusing a seeded September tab.
+ */
+const seedWithTablessMember = (storage: MemoryStorage) => {
+  const database = createDemoDatabase()
+  database.consumers.push({
+    id: 'member-novo',
+    name: 'Novo Integrante',
+    kind: CONSUMER_KIND.MEMBER,
+    active: true,
+  })
+  storage.values.set('test-bar', JSON.stringify({ version: 1, data: database }))
+  return storage
 }
 
 describe('LocalBarRepository persistence', () => {
@@ -133,6 +153,129 @@ describe('LocalBarRepository workflows', () => {
 
     expect(visitor).toMatchObject({ kind: CONSUMER_KIND.VISITOR, active: true })
     expect(first).toEqual(second)
+  })
+
+  it('opens a monthly tab for a member that has none in the month', async () => {
+    const { repository } = createRepository(seedWithTablessMember(new MemoryStorage()))
+
+    const tab = await repository.ensureMonthlyTab({
+      memberId: 'member-novo',
+      month: getMonthKey(DEFAULT_NOW),
+    })
+
+    expect(tab).toEqual({
+      id: 'new-1',
+      kind: TAB_KIND.MONTHLY,
+      status: TAB_STATUS.OPEN,
+      memberId: 'member-novo',
+      month: '2026-09',
+      openedAt: DEFAULT_NOW,
+    })
+    expect(await repository.listTabs()).toContainEqual(tab)
+  })
+
+  /**
+   * A monthly closing closes tabs by `tab.month` but attributes consumption by
+   * `getMonthKey(consumption.createdAt)`. If the two keys could disagree, a
+   * consumption would be consolidated into one month while its tab was stamped
+   * with another, so the closing would neither capture it nor close its tab.
+   */
+  it('stamps a created tab with the same month key attribution uses', async () => {
+    const lastLocalEveningOfSeptember = new Date(2026, 8, 30, 22, 0).toISOString()
+    const { repository } = createRepository(
+      seedWithTablessMember(new MemoryStorage()),
+      lastLocalEveningOfSeptember,
+    )
+
+    const tab = await repository.ensureMonthlyTab({
+      memberId: 'member-novo',
+      month: getCurrentMonth(new Date(lastLocalEveningOfSeptember)),
+    })
+
+    expect(tab.month).toBe(getMonthKey(lastLocalEveningOfSeptember))
+    expect(tab.month).toBe(getCurrentMonth(new Date(lastLocalEveningOfSeptember)))
+  })
+
+  it('refuses to open a tab for a month other than the write-time month', async () => {
+    const { repository, storage } = createRepository(
+      seedWithTablessMember(new MemoryStorage()),
+    )
+    const bytes = storage.values.get('test-bar')
+
+    await expect(repository.ensureMonthlyTab({ memberId: 'member-novo', month: '2026-10' }))
+      .rejects.toThrow('Monthly tab month must match the current month')
+    expect(storage.values.get('test-bar')).toBe(bytes)
+  })
+
+  it('still returns an existing tab from a month that is already over', async () => {
+    const { repository } = createRepository(new MemoryStorage(), '2026-10-04T15:00:00.000Z')
+
+    const tab = await repository.ensureMonthlyTab({ memberId: 'member-ana', month: '2026-09' })
+
+    expect(tab.id).toBe('tab-ana-2026-09')
+  })
+
+  it('idempotently reuses the monthly tab already open for the month', async () => {
+    const { repository } = createRepository()
+
+    const first = await repository.ensureMonthlyTab({ memberId: 'member-ana', month: '2026-09' })
+    const second = await repository.ensureMonthlyTab({ memberId: 'member-ana', month: '2026-09' })
+
+    expect(first.id).toBe('tab-ana-2026-09')
+    expect(second).toEqual(first)
+    expect((await repository.listTabs()).filter(({ kind }) => kind === TAB_KIND.MONTHLY))
+      .toHaveLength(3)
+  })
+
+  it('returns a closed monthly tab as it is instead of reopening it', async () => {
+    const { repository } = createRepository()
+    await repository.createMonthlyClosing({ month: '2026-09', actorId: 'admin' })
+
+    const tab = await repository.ensureMonthlyTab({ memberId: 'member-ana', month: '2026-09' })
+
+    expect(tab).toMatchObject({
+      id: 'tab-ana-2026-09',
+      status: TAB_STATUS.CLOSED,
+      closedAt: '2026-09-20T15:00:00.000Z',
+    })
+    await expect(repository.createConsumption({
+      tabId: tab.id, itemId: 'item-cerveja', quantity: 1,
+      chargeKind: CHARGE_KIND.CHARGED, actorId: 'admin',
+    })).rejects.toThrow('Cannot add consumption to a closed tab')
+  })
+
+  it.each(['2026-9', '2026/09', '2026-13', 'setembro', '2026-00'])(
+    'rejects the malformed month %s without writing',
+    async (month) => {
+      const { repository, storage } = createRepository()
+      await repository.getSnapshot()
+      const bytes = storage.values.get('test-bar')
+
+      await expect(repository.ensureMonthlyTab({ memberId: 'member-ana', month }))
+        .rejects.toThrow('Month must use the YYYY-MM format')
+      expect(storage.values.get('test-bar')).toBe(bytes)
+    },
+  )
+
+  it.each([
+    ['visitor-rafael', 'a visitor'],
+    ['item-cerveja', 'an unknown consumer'],
+  ])('rejects a monthly tab for %s (%s)', async (memberId) => {
+    const { repository } = createRepository()
+
+    await expect(repository.ensureMonthlyTab({ memberId, month: '2026-09' }))
+      .rejects.toThrow(/Consumer must be an active member|Member not found/)
+  })
+
+  it('rejects a monthly tab for an inactive member', async () => {
+    const { repository, storage } = createRepository()
+    const database = createDemoDatabase()
+    const index = database.consumers.findIndex(({ id }) => id === 'member-celia')
+    database.consumers[index] = { ...database.consumers[index], active: false }
+    storage.values.set('test-bar', JSON.stringify({ version: 1, data: database }))
+
+    await expect(repository.ensureMonthlyTab({ memberId: 'member-celia', month: '2026-09' }))
+      .rejects.toThrow('Consumer must be an active member')
   })
 
   it('preserves a closed event tab until it is explicitly reopened', async () => {

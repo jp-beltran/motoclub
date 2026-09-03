@@ -7,6 +7,7 @@ import type {
   Item,
   MemberStatement,
   MonthlyClosing,
+  MonthlyTab,
   Payment,
   StockMovement,
   Tab,
@@ -45,6 +46,7 @@ export interface LocalBarRepositoryDependencies {
 
 export interface CreateVisitorInput { readonly name: string; readonly phone?: string }
 export interface EnsureEventTabInput { readonly eventId: string; readonly visitorId: string }
+export interface EnsureMonthlyTabInput { readonly memberId: string; readonly month: string }
 export interface SelectActiveEventInput { readonly name: string; readonly startsAt?: string }
 export interface CreateConsumptionInput {
   readonly tabId: string
@@ -97,6 +99,7 @@ export interface BarRepository {
   resetDemo(): Promise<BarDatabase>
   createVisitor(input: CreateVisitorInput): Promise<Consumer>
   ensureEventTab(input: EnsureEventTabInput): Promise<EventTab>
+  ensureMonthlyTab(input: EnsureMonthlyTabInput): Promise<MonthlyTab>
   selectOrCreateActiveEvent(input: SelectActiveEventInput): Promise<Event>
   createConsumption(input: CreateConsumptionInput): Promise<ConsumptionResult>
   cancelConsumption(input: CancelConsumptionRepositoryInput): Promise<CancellationResult>

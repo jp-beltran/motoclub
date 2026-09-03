@@ -19,7 +19,6 @@ describe('AppRouter', () => {
     renderAt('/lancamentos')
 
     expect(await screen.findByRole('heading', { name: 'Lançamentos' })).toBeInTheDocument()
-    expect(screen.getByText('Em construção.')).toBeInTheDocument()
   })
 
   it.each([

@@ -10,6 +10,7 @@ import type {
   EditConsumptionQuantityInput,
   EditConsumptionQuantityResult,
   EnsureEventTabInput,
+  EnsureMonthlyTabInput,
   LocalBarRepositoryDependencies,
   ReassignConsumptionInput,
   RecordPaymentInput,
@@ -36,11 +37,13 @@ import type {
   Item,
   MemberStatement,
   MonthlyClosing,
+  MonthlyTab,
   Payment,
   StockMovement,
   Tab,
 } from '../domain/entities'
 import { assertPositiveCents } from '../domain/money'
+import { getMonthKey } from '../domain/month'
 import { consolidateMonth } from '../domain/monthly-closing'
 import { createDemoDatabase } from './demo-seed'
 
@@ -50,6 +53,10 @@ const INACTIVE_EVENT_MESSAGE = 'Event must be active'
 const EXCESSIVE_PAYMENT_MESSAGE = 'Payment cannot exceed the amount due'
 const MONTHLY_TAB_PAYMENT_MESSAGE =
   'Monthly tab debt must be paid through its member statement'
+const INVALID_MONTH_MESSAGE = 'Month must use the YYYY-MM format'
+const INACTIVE_MEMBER_MESSAGE = 'Consumer must be an active member'
+const MISMATCHED_MONTH_MESSAGE = 'Monthly tab month must match the current month'
+const MONTH_PATTERN = /^\d{4}-(?:0[1-9]|1[0-2])$/
 
 export type BarPersistenceErrorCode =
   | 'malformed-json'
@@ -127,6 +134,45 @@ export class LocalBarRepository implements BarRepository {
       const tab: EventTab = {
         id: this.dependencies.nextId(), kind: TAB_KIND.EVENT, status: TAB_STATUS.OPEN,
         eventId: event.id, visitorId: visitor.id, openedAt: this.dependencies.now(),
+      }
+      database.tabs.push(tab)
+      return tab
+    })
+  }
+
+  /**
+   * Mirrors ensureEventTab: an existing monthly tab is returned as it is, so a
+   * tab closed by a monthly closing stays closed and late consumption is
+   * refused downstream instead of silently reopening the month.
+   *
+   * A created tab is stamped with `getMonthKey(now())` — the very function
+   * `consolidateMonth` uses to attribute a consumption to a month — because a
+   * closing closes tabs by `tab.month` but consolidates consumption by that
+   * key. Deriving both from one function makes it structurally impossible for
+   * a consumption to land in one month while its tab is stamped with another.
+   * Ensuring a month other than the write-time month can therefore only read
+   * an existing tab, never open one.
+   */
+  async ensureMonthlyTab(input: EnsureMonthlyTabInput): Promise<MonthlyTab> {
+    return this.update((database) => {
+      if (!MONTH_PATTERN.test(input.month)) throw new Error(INVALID_MONTH_MESSAGE)
+      const member = findById(database.consumers, input.memberId, 'Member')
+      if (member.kind !== CONSUMER_KIND.MEMBER || member.active === false) {
+        throw new Error(INACTIVE_MEMBER_MESSAGE)
+      }
+      const existing = database.tabs.find((tab) =>
+        tab.kind === TAB_KIND.MONTHLY && tab.memberId === member.id &&
+        tab.month === input.month,
+      )
+      if (existing?.kind === TAB_KIND.MONTHLY) {
+        return existing
+      }
+      const openedAt = this.dependencies.now()
+      const month = getMonthKey(openedAt)
+      if (month !== input.month) throw new Error(MISMATCHED_MONTH_MESSAGE)
+      const tab: MonthlyTab = {
+        id: this.dependencies.nextId(), kind: TAB_KIND.MONTHLY, status: TAB_STATUS.OPEN,
+        memberId: member.id, month, openedAt,
       }
       database.tabs.push(tab)
       return tab
