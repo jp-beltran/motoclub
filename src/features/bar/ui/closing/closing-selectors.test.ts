@@ -131,6 +131,45 @@ describe('buildMonthPreview', () => {
     ])
     expect(preview[0].totalCents).toBe(1400)
   })
+
+  it('still includes a member whose only consumption this month is a courtesy', () => {
+    const database = baseDatabase()
+    database.consumptions = [
+      consumption({
+        id: 'c1', consumerId: 'member-bruno', chargeKind: CHARGE_KIND.COURTESY,
+        itemId: 'item-agua', unitPriceCents: 400, quantity: 2,
+      }),
+    ]
+
+    const preview = buildMonthPreview(database, MONTH)
+
+    // Matches consolidateMonth's unconditional inclusion (any status/charge
+    // kind counts) — the member has no charged lines and nothing due yet,
+    // but still shows up so the preview never silently drops someone the
+    // closing itself would still produce a (empty) statement for.
+    expect(preview).toHaveLength(1)
+    expect(preview[0].consumer.id).toBe('member-bruno')
+    expect(preview[0].lines).toEqual([])
+    expect(preview[0].totalCents).toBe(0)
+  })
+
+  it('still includes a member whose only consumption this month was cancelled', () => {
+    const database = baseDatabase()
+    database.consumptions = [
+      consumption({
+        id: 'c1', consumerId: 'member-bruno', quantity: 5,
+        status: CONSUMPTION_STATUS.CANCELLED,
+        cancelledAt: SEPTEMBER_INSTANT, cancelledByActorId: 'admin-demo',
+      }),
+    ]
+
+    const preview = buildMonthPreview(database, MONTH)
+
+    expect(preview).toHaveLength(1)
+    expect(preview[0].consumer.id).toBe('member-bruno')
+    expect(preview[0].lines).toEqual([])
+    expect(preview[0].totalCents).toBe(0)
+  })
 })
 
 describe('summarizeClosedStatement', () => {
