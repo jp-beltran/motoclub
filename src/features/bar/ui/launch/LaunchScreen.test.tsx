@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 
@@ -236,11 +236,16 @@ describe('LaunchScreen quantity and courtesy', () => {
     await click(screen.getByRole('button', { name: 'Ver comanda' }))
     const panel = screen.getByRole('complementary', { name: 'Comanda de Rafael Oliveira' })
 
-    // The seeded 2x refrigerante at R$ 6,00 is the whole charged total.
-    expect(panel).toHaveTextContent('Total')
-    expect(panel).toHaveTextContent('R$ 12,00')
-    expect(panel).toHaveTextContent('Cortesias (não somam no total)')
-    expect(panel).toHaveTextContent('1× Água mineral')
+    // The seeded 2x refrigerante at R$ 6,00 is the whole charged total: the
+    // R$ 4,00 courtesy is listed but must not reach the total row.
+    expect(within(panel).getByText('Total').parentElement).toHaveTextContent('R$ 12,00')
+    expect(within(panel).getByText('Total').parentElement).not.toHaveTextContent('R$ 16,00')
+    const courtesy = within(panel).getByText('Cortesias (não somam no total)').parentElement!
+    expect(courtesy).toHaveTextContent('1× Água mineral')
+    expect(courtesy).toHaveTextContent('R$ 4,00')
+    // A visitor tab is settled directly, so its balance is shown.
+    expect(within(panel).getByText('Pago').parentElement).toHaveTextContent('R$ 7,00')
+    expect(within(panel).getByText('Em aberto').parentElement).toHaveTextContent('R$ 5,00')
   })
 
   it('groups repeated launches of one item into a single tab line', async () => {
@@ -261,9 +266,16 @@ describe('LaunchScreen quantity and courtesy', () => {
     await click(screen.getByRole('button', { name: 'Ver comanda' }))
     const panel = screen.getByRole('complementary', { name: 'Comanda de Ana Paula' })
 
-    // 3 seeded + 2 launched, at R$ 7,00 each.
-    expect(panel).toHaveTextContent('5× Cerveja lata')
-    expect(panel).toHaveTextContent('R$ 35,00')
+    // 3 seeded + 2 launched, at R$ 7,00 each, on one grouped line.
+    expect(within(panel).getAllByRole('listitem')).toHaveLength(1)
+    expect(within(panel).getByRole('listitem')).toHaveTextContent('5× Cerveja lata')
+    expect(within(panel).getByRole('listitem')).toHaveTextContent('R$ 35,00')
+    expect(within(panel).getByText('Total').parentElement).toHaveTextContent('R$ 35,00')
+    // A monthly tab is never settled here: it is charged in the statement.
+    expect(panel).toHaveTextContent(
+      'O saldo do integrante é cobrado no extrato mensal, após o fechamento.',
+    )
+    expect(within(panel).queryByText('Em aberto')).not.toBeInTheDocument()
   })
 })
 

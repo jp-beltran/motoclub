@@ -59,6 +59,8 @@ export function LaunchScreen() {
     ? snapshot.consumers.find(({ id }) => id === selected.id) ?? selected
     : undefined
   const resolution = consumer ? resolveConsumerTab(snapshot, consumer, month) : undefined
+  // A const, so narrowing survives into the callback below.
+  const undoConsumptionId = feedback?.undoConsumptionId
   const summary =
     resolution?.kind === 'ready' ? summarizeTab(snapshot, resolution.tab.id) : undefined
 
@@ -177,9 +179,7 @@ export function LaunchScreen() {
                   warning={feedback.warning}
                   isUndoing={cancelConsumption.isPending}
                   onUndo={
-                    feedback.undoConsumptionId
-                      ? () => handleUndo(feedback.undoConsumptionId as string)
-                      : undefined
+                    undoConsumptionId ? () => handleUndo(undoConsumptionId) : undefined
                   }
                 />
               ) : null}

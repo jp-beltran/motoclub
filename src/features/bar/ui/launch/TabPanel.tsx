@@ -1,4 +1,5 @@
 import type { TabLine, TabSummary } from '../../application/tab-summary'
+import { TAB_KIND } from '../../domain/constants'
 import { formatCents, formatQuantity } from '../../../../shared/format'
 import { Button } from '../../../../shared/ui/Button'
 
@@ -40,14 +41,22 @@ export function TabPanel({ summary, consumerName, onClose }: TabPanelProps) {
               {formatCents(summary.totalCents)}
             </span>
           </div>
-          <div className="flex items-baseline justify-between gap-3 text-sm text-content-muted">
-            <span>Pago</span>
-            <span>{formatCents(summary.payment.paidCents)}</span>
-          </div>
-          <div className="flex items-baseline justify-between gap-3 text-sm text-content-muted">
-            <span>Em aberto</span>
-            <span>{formatCents(summary.payment.remainingCents)}</span>
-          </div>
+          {summary.tab.kind === TAB_KIND.EVENT ? (
+            <>
+              <div className="flex items-baseline justify-between gap-3 text-sm text-content-muted">
+                <span>Pago</span>
+                <span>{formatCents(summary.payment.paidCents)}</span>
+              </div>
+              <div className="flex items-baseline justify-between gap-3 text-sm text-content-muted">
+                <span>Em aberto</span>
+                <span>{formatCents(summary.payment.remainingCents)}</span>
+              </div>
+            </>
+          ) : (
+            <p className="text-xs text-content-muted">
+              O saldo do integrante é cobrado no extrato mensal, após o fechamento.
+            </p>
+          )}
 
           {summary.courtesyLines.length > 0 ? (
             <div className="border-t border-border-subtle pt-3">
