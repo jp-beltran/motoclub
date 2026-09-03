@@ -134,17 +134,18 @@ describe('LocalBarRepository workflows', () => {
     expect(first).toEqual(second)
   })
 
-  it('reopens a closed event tab when ensuring it', async () => {
+  it('preserves a closed event tab until it is explicitly reopened', async () => {
     const { repository } = createRepository()
     const existing = (await repository.listTabs()).find(({ kind }) => kind === 'event')!
     await repository.closeVisitorTab(existing.id)
 
-    const reopened = await repository.ensureEventTab({
+    const ensured = await repository.ensureEventTab({
       eventId: 'event-setembro',
       visitorId: existing.kind === 'event' ? existing.visitorId : '',
     })
 
-    expect(reopened.status).toBe(TAB_STATUS.OPEN)
+    expect(ensured.status).toBe(TAB_STATUS.CLOSED)
+    expect((await repository.reopenVisitorTab(existing.id)).status).toBe(TAB_STATUS.OPEN)
   })
 
   it('does not reopen an existing tab for a closed event', async () => {

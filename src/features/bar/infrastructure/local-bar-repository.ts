@@ -116,14 +116,7 @@ export class LocalBarRepository implements BarRepository {
       )
       const existing = database.tabs[existingIndex]
       if (existing?.kind === TAB_KIND.EVENT) {
-        if (existing.status === TAB_STATUS.OPEN) return existing
-        const reopened: EventTab = {
-          id: existing.id, kind: existing.kind, status: TAB_STATUS.OPEN,
-          eventId: existing.eventId, visitorId: existing.visitorId,
-          openedAt: existing.openedAt,
-        }
-        database.tabs[existingIndex] = reopened
-        return reopened
+        return existing
       }
       const tab: EventTab = {
         id: this.dependencies.nextId(), kind: TAB_KIND.EVENT, status: TAB_STATUS.OPEN,
