@@ -7,6 +7,7 @@ import {
   EVENT_STATUS,
   PAYMENT_TARGET,
   STOCK_MOVEMENT_KIND,
+  TAB_KIND,
   TAB_STATUS,
 } from '../domain/constants'
 import type { StorageLike } from '../application/bar-repository'
@@ -158,6 +159,25 @@ describe('LocalBarRepository workflows', () => {
     await expect(repository.ensureEventTab({
       eventId: 'event-setembro', visitorId: 'visitor-rafael',
     })).rejects.toThrow('Event must be active')
+    expect(storage.values.get('test-bar')).toBe(bytes)
+  })
+
+  it('refuses consumption and status changes on a tab of a closed event', async () => {
+    const { repository, storage } = createRepository()
+    const database = createDemoDatabase()
+    const index = database.events.findIndex(({ id }) => id === 'event-setembro')
+    database.events[index] = { ...database.events[index], status: EVENT_STATUS.CLOSED }
+    const bytes = JSON.stringify({ version: 1, data: database })
+    storage.values.set('test-bar', bytes)
+
+    await expect(repository.createConsumption({
+      tabId: 'tab-rafael-evento', itemId: 'item-cerveja', quantity: 1,
+      chargeKind: CHARGE_KIND.CHARGED, actorId: 'admin',
+    })).rejects.toThrow('Event must be active')
+    await expect(repository.closeVisitorTab('tab-rafael-evento'))
+      .rejects.toThrow('Event must be active')
+    await expect(repository.reopenVisitorTab('tab-rafael-evento'))
+      .rejects.toThrow('Event must be active')
     expect(storage.values.get('test-bar')).toBe(bytes)
   })
 
@@ -318,17 +338,93 @@ describe('LocalBarRepository workflows', () => {
 
   it('records only strictly positive payments', async () => {
     const { repository, storage } = createRepository()
-    const tab = (await repository.getSnapshot()).tabs[0]
+    const tab = (await repository.getSnapshot()).tabs
+      .find(({ kind }) => kind === TAB_KIND.EVENT)!
     const payment = await repository.recordPayment({
-      target: PAYMENT_TARGET.TAB, targetId: tab.id, amountCents: 1500, actorId: 'admin',
+      target: PAYMENT_TARGET.TAB, targetId: tab.id, amountCents: 500, actorId: 'admin',
     })
     const bytes = storage.values.get('test-bar')
 
-    expect(payment.amountCents).toBe(1500)
+    expect(payment.amountCents).toBe(500)
     await expect(repository.recordPayment({
       target: PAYMENT_TARGET.TAB, targetId: tab.id, amountCents: 0, actorId: 'admin',
     })).rejects.toThrow('Money amounts must use positive safe integer cents')
     expect(storage.values.get('test-bar')).toBe(bytes)
+  })
+
+  it('refuses to pay a monthly tab as if it were a visitor tab', async () => {
+    const { repository, storage } = createRepository()
+    await repository.getSnapshot()
+    const bytes = storage.values.get('test-bar')
+
+    await expect(repository.recordPayment({
+      target: PAYMENT_TARGET.TAB, targetId: 'tab-ana-2026-09',
+      amountCents: 2_100, actorId: 'admin',
+    })).rejects.toThrow('Monthly tab debt must be paid through its member statement')
+    expect(storage.values.get('test-bar')).toBe(bytes)
+  })
+
+  it('caps a visitor tab payment at the outstanding balance', async () => {
+    const { repository, storage } = createRepository()
+    await repository.getSnapshot()
+    const bytes = storage.values.get('test-bar')
+
+    await expect(repository.recordPayment({
+      target: PAYMENT_TARGET.TAB, targetId: 'tab-rafael-evento',
+      amountCents: 999_999_900, actorId: 'admin',
+    })).rejects.toThrow('Payment cannot exceed the amount due')
+    await expect(repository.recordPayment({
+      target: PAYMENT_TARGET.TAB, targetId: 'tab-rafael-evento',
+      amountCents: 501, actorId: 'admin',
+    })).rejects.toThrow('Payment cannot exceed the amount due')
+    await expect(repository.recordPayment({
+      target: PAYMENT_TARGET.TAB, targetId: 'tab-juliana-evento',
+      amountCents: 1, actorId: 'admin',
+    })).rejects.toThrow('Payment cannot exceed the amount due')
+    expect(storage.values.get('test-bar')).toBe(bytes)
+
+    const settlement = await repository.recordPayment({
+      target: PAYMENT_TARGET.TAB, targetId: 'tab-rafael-evento',
+      amountCents: 500, actorId: 'admin',
+    })
+
+    expect(settlement.amountCents).toBe(500)
+    await expect(repository.recordPayment({
+      target: PAYMENT_TARGET.TAB, targetId: 'tab-rafael-evento',
+      amountCents: 1, actorId: 'admin',
+    })).rejects.toThrow('Payment cannot exceed the amount due')
+  })
+
+  it('rejects a payment aimed at a target that does not exist', async () => {
+    const { repository } = createRepository()
+
+    await expect(repository.recordPayment({
+      target: PAYMENT_TARGET.TAB, targetId: 'missing-tab',
+      amountCents: 100, actorId: 'admin',
+    })).rejects.toThrow('Payment target not found')
+    await expect(repository.recordPayment({
+      target: PAYMENT_TARGET.STATEMENT, targetId: 'missing-statement',
+      amountCents: 100, actorId: 'admin',
+    })).rejects.toThrow('Payment target not found')
+  })
+
+  it('caps a statement payment at the outstanding balance', async () => {
+    const { repository } = createRepository()
+    const { statements } = await repository.createMonthlyClosing({
+      month: '2026-09', actorId: 'admin',
+    })
+    const statement = statements.find(({ memberId }) => memberId === 'member-ana')!
+
+    await expect(repository.recordPayment({
+      target: PAYMENT_TARGET.STATEMENT, targetId: statement.id,
+      amountCents: 2_101, actorId: 'admin',
+    })).rejects.toThrow('Payment cannot exceed the amount due')
+    const settlement = await repository.recordPayment({
+      target: PAYMENT_TARGET.STATEMENT, targetId: statement.id,
+      amountCents: 2_100, actorId: 'admin',
+    })
+
+    expect(settlement.amountCents).toBe(2_100)
   })
 
   it('creates a monthly closing once with member statements', async () => {
@@ -341,6 +437,39 @@ describe('LocalBarRepository workflows', () => {
     await expect(repository.createMonthlyClosing({ month: '2026-09', actorId: 'admin' }))
       .rejects.toThrow('Monthly closing already exists')
     expect(storage.values.get('test-bar')).toBe(bytes)
+  })
+
+  it('closes the monthly tabs of the closed month so late consumption is refused', async () => {
+    const { repository } = createRepository()
+
+    await repository.createMonthlyClosing({ month: '2026-09', actorId: 'admin' })
+    const monthlyTabs = (await repository.listTabs())
+      .filter(({ kind }) => kind === TAB_KIND.MONTHLY)
+
+    expect(monthlyTabs.map(({ id, status, closedAt }) => ({ id, status, closedAt })))
+      .toEqual([
+        { id: 'tab-ana-2026-09', status: TAB_STATUS.CLOSED, closedAt: '2026-09-20T15:00:00.000Z' },
+        { id: 'tab-bruno-2026-09', status: TAB_STATUS.CLOSED, closedAt: '2026-09-20T15:00:00.000Z' },
+        { id: 'tab-celia-2026-09', status: TAB_STATUS.CLOSED, closedAt: '2026-09-20T15:00:00.000Z' },
+      ])
+    await expect(repository.createConsumption({
+      tabId: 'tab-ana-2026-09', itemId: 'item-cerveja', quantity: 1,
+      chargeKind: CHARGE_KIND.CHARGED, actorId: 'admin',
+    })).rejects.toThrow('Cannot add consumption to a closed tab')
+  })
+
+  it('leaves monthly tabs from other months untouched by a closing', async () => {
+    const { repository, storage } = createRepository()
+    const database = createDemoDatabase()
+    const index = database.tabs.findIndex(({ id }) => id === 'tab-celia-2026-09')
+    ;(database.tabs[index] as { month: string }).month = '2026-08'
+    storage.values.set('test-bar', JSON.stringify({ version: 1, data: database }))
+
+    await repository.createMonthlyClosing({ month: '2026-09', actorId: 'admin' })
+
+    const tabs = await repository.listTabs()
+    expect(tabs.find(({ id }) => id === 'tab-celia-2026-09')!.status).toBe(TAB_STATUS.OPEN)
+    expect(tabs.find(({ id }) => id === 'tab-ana-2026-09')!.status).toBe(TAB_STATUS.CLOSED)
   })
 
   it.each([

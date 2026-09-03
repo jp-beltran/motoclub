@@ -26,6 +26,8 @@ import {
   TAB_STATUS,
 } from '../domain/constants'
 import { cancelConsumption, recordConsumption } from '../domain/consumption'
+import { summarizeTabConsumptions } from '../domain/financials'
+import { summarizePayments } from '../domain/payments'
 import type {
   Consumption,
   Consumer,
@@ -44,6 +46,10 @@ import { createDemoDatabase } from './demo-seed'
 
 const DEFAULT_STORAGE_KEY = 'motoclub:bar-database'
 const INVALID_DATA_MESSAGE = 'Stored bar data is structurally invalid'
+const INACTIVE_EVENT_MESSAGE = 'Event must be active'
+const EXCESSIVE_PAYMENT_MESSAGE = 'Payment cannot exceed the amount due'
+const MONTHLY_TAB_PAYMENT_MESSAGE =
+  'Monthly tab debt must be paid through its member statement'
 
 export type BarPersistenceErrorCode =
   | 'malformed-json'
@@ -105,7 +111,7 @@ export class LocalBarRepository implements BarRepository {
   async ensureEventTab(input: EnsureEventTabInput): Promise<EventTab> {
     return this.update((database) => {
       const event = findById(database.events, input.eventId, 'Event')
-      if (event.status !== EVENT_STATUS.ACTIVE) throw new Error('Event must be active')
+      assertActiveEvent(event)
       const visitor = findById(database.consumers, input.visitorId, 'Visitor')
       if (visitor.kind !== CONSUMER_KIND.VISITOR || visitor.active === false) {
         throw new Error('Consumer must be an active visitor')
@@ -206,10 +212,9 @@ export class LocalBarRepository implements BarRepository {
   async recordPayment(input: RecordPaymentInput): Promise<Payment> {
     return this.update((database) => {
       assertPositiveCents(input.amountCents)
-      if (input.target === PAYMENT_TARGET.TAB) {
-        findById(database.tabs, input.targetId, 'Payment target')
-      } else {
-        findById(database.memberStatements, input.targetId, 'Payment target')
+      const consumptions = resolvePaymentTargetConsumptions(database, input)
+      if (input.amountCents > calculateRemainingCents(database, input, consumptions)) {
+        throw new Error(EXCESSIVE_PAYMENT_MESSAGE)
       }
       const payment: Payment = {
         id: this.dependencies.nextId(), target: input.target, targetId: input.targetId,
@@ -234,6 +239,7 @@ export class LocalBarRepository implements BarRepository {
       }, this.dependencies)
       database.monthlyClosings.push(result.closing)
       database.memberStatements.push(...result.statements)
+      this.closeMonthlyTabs(database, input.month)
       return result
     })
   }
@@ -264,6 +270,7 @@ export class LocalBarRepository implements BarRepository {
       const index = findIndexById(database.tabs, tabId, 'Tab')
       const tab = database.tabs[index]
       if (tab.kind !== TAB_KIND.EVENT) throw new Error('Tab must belong to a visitor')
+      assertActiveEventTab(database, tab)
       const updated: EventTab = status === TAB_STATUS.CLOSED
         ? { ...tab, status, closedAt: this.dependencies.now() }
         : { id: tab.id, kind: tab.kind, status, eventId: tab.eventId,
@@ -273,11 +280,22 @@ export class LocalBarRepository implements BarRepository {
     })
   }
 
+  private closeMonthlyTabs(database: BarDatabase, month: string): void {
+    const closedAt = this.dependencies.now()
+    database.tabs = database.tabs.map((tab) =>
+      tab.kind === TAB_KIND.MONTHLY && tab.month === month &&
+      tab.status === TAB_STATUS.OPEN
+        ? { ...tab, status: TAB_STATUS.CLOSED, closedAt }
+        : tab,
+    )
+  }
+
   private recordConsumption(database: BarDatabase, input: CreateConsumptionInput) {
     if (!Number.isSafeInteger(input.quantity) || input.quantity <= 0) {
       throw new Error('Consumption quantity must be a positive safe integer')
     }
     const tab = findById(database.tabs, input.tabId, 'Tab')
+    assertActiveEventTab(database, tab)
     const itemIndex = findIndexById(database.items, input.itemId, 'Item')
     const item = database.items[itemIndex]
     const result = recordConsumption({
@@ -553,6 +571,41 @@ function findById<Value extends { readonly id: string }>(
   values: readonly Value[], id: string, entity: string,
 ): Value {
   return values[findIndexById(values, id, entity)]
+}
+
+function assertActiveEvent(event: Event): void {
+  if (event.status !== EVENT_STATUS.ACTIVE) throw new Error(INACTIVE_EVENT_MESSAGE)
+}
+
+function assertActiveEventTab(database: BarDatabase, tab: Tab): void {
+  if (tab.kind !== TAB_KIND.EVENT) return
+  assertActiveEvent(findById(database.events, tab.eventId, 'Event'))
+}
+
+function resolvePaymentTargetConsumptions(
+  database: BarDatabase,
+  input: RecordPaymentInput,
+): readonly Consumption[] {
+  if (input.target !== PAYMENT_TARGET.TAB) {
+    return findById(database.memberStatements, input.targetId, 'Payment target').consumptions
+  }
+  const tab = findById(database.tabs, input.targetId, 'Payment target')
+  if (tab.kind !== TAB_KIND.EVENT) throw new Error(MONTHLY_TAB_PAYMENT_MESSAGE)
+  return database.consumptions.filter(({ tabId }) => tabId === tab.id)
+}
+
+function calculateRemainingCents(
+  database: BarDatabase,
+  input: RecordPaymentInput,
+  consumptions: readonly Consumption[],
+): number {
+  const settledPayments = database.payments.filter(
+    ({ target, targetId }) => target === input.target && targetId === input.targetId,
+  )
+  return summarizePayments(
+    summarizeTabConsumptions(consumptions).totalCents,
+    settledPayments,
+  ).remainingCents
 }
 
 function assertValidManualMovement(input: AddStockMovementInput): void {
