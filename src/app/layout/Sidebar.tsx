@@ -64,7 +64,7 @@ export function Sidebar() {
                 to={to}
                 end={end}
                 className={({ isActive }) =>
-                  `flex min-h-11 items-center gap-3 rounded-md px-3 text-sm font-medium transition-colors ${
+                  `flex min-h-11 items-center gap-3 rounded-md px-3 text-sm font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
                     isActive
                       ? 'bg-surface-overlay text-accent'
                       : 'text-content-muted hover:bg-surface-overlay hover:text-content-primary'

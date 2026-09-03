@@ -39,4 +39,21 @@ describe('Sidebar', () => {
       'aria-current',
     )
   })
+
+  it('gives every navigation link a visible focus-visible ring', () => {
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <Sidebar />
+      </MemoryRouter>,
+    )
+
+    const links = screen.getAllByRole('link')
+    expect(links).toHaveLength(8)
+    for (const link of links) {
+      expect(link.className).toContain('focus-visible:outline')
+      expect(link.className).toContain('focus-visible:outline-2')
+      expect(link.className).toContain('focus-visible:outline-offset-2')
+      expect(link.className).toContain('focus-visible:outline-accent')
+    }
+  })
 })
