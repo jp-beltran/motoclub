@@ -52,7 +52,8 @@ export const BAR_ERROR_MESSAGES: Readonly<Record<BarErrorCode, string>> = {
   'consumption-already-cancelled': 'Este lançamento já foi cancelado.',
   'consumption-not-reassignable': 'Só é possível mover um lançamento ativo.',
   'consumption-item-mismatch':
-    'Este lançamento não corresponde ao produto informado. Atualize a página e tente novamente.',
+    'Este lançamento não corresponde ao item informado. ' +
+    'Atualize a página e tente novamente.',
   'reassign-target-tab-invalid':
     'A comanda de destino precisa estar aberta e ser do mesmo tipo.',
 
@@ -67,7 +68,8 @@ export const BAR_ERROR_MESSAGES: Readonly<Record<BarErrorCode, string>> = {
     'Este lançamento não tem a baixa de estoque original e não pode ser cancelado. ' +
     'Ajuste o estoque manualmente.',
 
-  'money-amount-invalid': 'O valor informado é inválido.',
+  'money-amount-invalid':
+    'O valor informado é inválido. Verifique os valores cadastrados e tente novamente.',
   // A única guarda de "valor positivo" que a interface alcança é o registro de
   // pagamento, então a frase fala de pagamento.
   'money-amount-not-positive': 'Informe um valor de pagamento válido, maior que zero.',
