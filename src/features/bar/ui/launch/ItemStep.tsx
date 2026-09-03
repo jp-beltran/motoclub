@@ -2,7 +2,10 @@ import { useState } from 'react'
 
 import { CONSUMER_KIND, type ChargeKind } from '../../domain/constants'
 import type { Consumer, Item } from '../../domain/entities'
-import type { ConsumerTabResolution } from '../../application/consumer-tab'
+import {
+  hasViewableTab,
+  type ConsumerTabResolution,
+} from '../../application/consumer-tab'
 import { ItemCard } from './ItemCard'
 import { LAUNCH_BLOCK_MESSAGES } from './launch-messages'
 import { Button } from '../../../../shared/ui/Button'
@@ -56,9 +59,11 @@ export function ItemStep({
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="ghost" onClick={onOpenTab}>
-            Ver comanda
-          </Button>
+          {hasViewableTab(resolution) ? (
+            <Button variant="ghost" onClick={onOpenTab}>
+              Ver comanda
+            </Button>
+          ) : null}
           <Button variant="ghost" onClick={onChangeConsumer}>
             Trocar consumidor
           </Button>

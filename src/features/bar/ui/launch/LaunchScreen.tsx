@@ -10,7 +10,7 @@ import { ItemStep } from './ItemStep'
 import { LaunchFeedback } from './LaunchFeedback'
 import { RecentLaunches } from './RecentLaunches'
 import { TabPanel } from './TabPanel'
-import { resolveConsumerTab } from '../../application/consumer-tab'
+import { getResolvedTab, resolveConsumerTab } from '../../application/consumer-tab'
 import { describeRepositoryError } from '../../application/error-messages'
 import {
   useCancelConsumption,
@@ -61,8 +61,10 @@ export function LaunchScreen() {
   const resolution = consumer ? resolveConsumerTab(snapshot, consumer, month) : undefined
   // A const, so narrowing survives into the callback below.
   const undoConsumptionId = feedback?.undoConsumptionId
-  const summary =
-    resolution?.kind === 'ready' ? summarizeTab(snapshot, resolution.tab.id) : undefined
+  // Not just the 'ready' tab: a closed tab still owes money, and the panel has
+  // to show that balance rather than claim the tab is empty.
+  const resolvedTab = resolution ? getResolvedTab(resolution) : undefined
+  const summary = resolvedTab ? summarizeTab(snapshot, resolvedTab.id) : undefined
 
   function handleLaunch(itemId: string, quantity: number, chargeKind: ChargeKind) {
     if (!consumer) return
