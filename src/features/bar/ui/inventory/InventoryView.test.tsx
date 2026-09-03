@@ -1,17 +1,16 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
 import { CURRENT_ACTOR_ID, CURRENT_ACTOR_NAME } from '../../application/actor'
 import { LOW_STOCK_THRESHOLD } from '../../application/constants'
-import { BarRepositoryProvider } from '../../application/repository-context'
 import type { AddStockMovementInput, BarRepository } from '../../application/bar-repository'
 import { STOCK_MOVEMENT_KIND } from '../../domain/constants'
 import type { Item, StockMovement } from '../../domain/entities'
 import { createDemoDatabase } from '../../infrastructure/demo-seed'
 import { formatDateTime } from '../../../../shared/format'
 import { createFakeBarRepository } from '../../../../test/fake-bar-repository'
+import { renderWithBar } from '../../../../test/render-with-bar'
 import { InventoryView } from './InventoryView'
 
 function makeItem(overrides: Partial<Item> = {}): Item {
@@ -77,17 +76,31 @@ function createStatefulRepository(
 }
 
 function renderInventory(repository: BarRepository) {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <BarRepositoryProvider repository={repository}>
-        <InventoryView />
-      </BarRepositoryProvider>
-    </QueryClientProvider>,
-  )
+  return renderWithBar(<InventoryView />, { repository })
 }
 
 describe('InventoryView', () => {
+  it('gives both movement-kind radios a visible focus-visible ring', async () => {
+    const beer = makeItem({ stockQuantity: 10 })
+    const repository = createFakeBarRepository(
+      {},
+      { ...createDemoDatabase(), items: [beer] },
+    )
+    renderInventory(repository)
+
+    await screen.findByText('10', { exact: true })
+
+    const entryRadio = screen.getByRole('radio', { name: 'Entrada' })
+    const adjustmentRadio = screen.getByRole('radio', { name: 'Ajuste' })
+
+    for (const radio of [entryRadio, adjustmentRadio]) {
+      expect(radio.className).toContain('focus-visible:outline')
+      expect(radio.className).toContain('focus-visible:outline-2')
+      expect(radio.className).toContain('focus-visible:outline-offset-2')
+      expect(radio.className).toContain('focus-visible:outline-accent')
+    }
+  })
+
   it('registers an entry and increases the displayed current stock', async () => {
     const beer = makeItem({ stockQuantity: 10 })
     const { repository } = createStatefulRepository([beer])
@@ -141,7 +154,9 @@ describe('InventoryView', () => {
     await user.click(screen.getByRole('button', { name: 'Registrar movimentação' }))
 
     const alert = await screen.findByRole('alert')
-    expect(within(alert).getByText(/Item does not track stock/)).toBeInTheDocument()
+    expect(
+      within(alert).getByText('Este item não possui controle de estoque.'),
+    ).toBeInTheDocument()
 
     expect(screen.getByRole('button', { name: 'Registrar movimentação' })).toBeInTheDocument()
     expect(screen.getByRole('combobox', { name: 'Item' })).toBeInTheDocument()

@@ -11,6 +11,7 @@ import { useBarRepository } from '../../application/repository-context'
 import { STOCK_MOVEMENT_KIND } from '../../domain/constants'
 import { StockStatusBadge } from './StockStatusBadge'
 import {
+  describeMovementError,
   formatActorName,
   formatMovementKind,
   parseMovementQuantity,
@@ -21,6 +22,9 @@ import { getTrackedItems } from './stock-status'
 
 const FIELD_CLASSES =
   'min-h-11 rounded-md border border-border-subtle bg-surface-raised px-3 text-sm text-content-primary ' +
+  'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent'
+
+const RADIO_CLASSES =
   'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent'
 
 export function InventoryView() {
@@ -93,6 +97,7 @@ export function InventoryView() {
                 value={STOCK_MOVEMENT_KIND.ENTRY}
                 checked={kind === STOCK_MOVEMENT_KIND.ENTRY}
                 onChange={() => setKind(STOCK_MOVEMENT_KIND.ENTRY)}
+                className={RADIO_CLASSES}
               />
               Entrada
             </label>
@@ -103,6 +108,7 @@ export function InventoryView() {
                 value={STOCK_MOVEMENT_KIND.ADJUSTMENT}
                 checked={kind === STOCK_MOVEMENT_KIND.ADJUSTMENT}
                 onChange={() => setKind(STOCK_MOVEMENT_KIND.ADJUSTMENT)}
+                className={RADIO_CLASSES}
               />
               Ajuste
             </label>
@@ -147,7 +153,7 @@ export function InventoryView() {
           )}
           {mutation.isError && (
             <p role="alert" className="text-sm font-medium text-accent">
-              Não foi possível registrar a movimentação. Detalhe: {mutation.error.message}
+              {describeMovementError(mutation.error)}
             </p>
           )}
 

@@ -4,6 +4,7 @@ import { CURRENT_ACTOR_ID, CURRENT_ACTOR_NAME } from '../../application/actor'
 import { STOCK_MOVEMENT_KIND } from '../../domain/constants'
 import type { StockMovement } from '../../domain/entities'
 import {
+  describeMovementError,
   formatActorName,
   formatMovementKind,
   parseMovementQuantity,
@@ -102,5 +103,40 @@ describe('sortMovementsDescending', () => {
 
     expect(sortMovementsDescending(input)).toEqual([newest, oldest])
     expect(input).toEqual([oldest, newest])
+  })
+})
+
+describe('describeMovementError', () => {
+  it('maps a known repository error to a pt-BR sentence', () => {
+    expect(describeMovementError(new Error('Item does not track stock'))).toBe(
+      'Este item não possui controle de estoque.',
+    )
+  })
+
+  it('maps every error addStockMovement can raise to a pt-BR sentence', () => {
+    expect(describeMovementError(new Error('Item not found'))).toBe(
+      'Item não encontrado. Atualize a página e tente novamente.',
+    )
+    expect(describeMovementError(new Error('Stock entry quantity must be positive'))).toBe(
+      'A quantidade de entrada deve ser maior que zero.',
+    )
+    expect(
+      describeMovementError(new Error('Stock movement quantity must be a non-zero safe integer')),
+    ).toBe('Informe uma quantidade válida.')
+    expect(describeMovementError(new Error('Stock quantity must be a safe integer'))).toBe(
+      'A quantidade resultante do estoque é inválida.',
+    )
+  })
+
+  it('falls back to a generic pt-BR message for an unrecognized error', () => {
+    expect(describeMovementError(new Error('boom'))).toBe(
+      'Não foi possível registrar a movimentação. Tente novamente.',
+    )
+  })
+
+  it('falls back to the generic pt-BR message for a non-Error value', () => {
+    expect(describeMovementError('boom')).toBe(
+      'Não foi possível registrar a movimentação. Tente novamente.',
+    )
   })
 })
