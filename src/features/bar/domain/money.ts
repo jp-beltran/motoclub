@@ -3,6 +3,8 @@ export const INVALID_NON_NEGATIVE_CENTS_MESSAGE =
 export const INVALID_POSITIVE_CENTS_MESSAGE =
   'Money amounts must use positive safe integer cents'
 export const UNSAFE_CENTS_TOTAL_MESSAGE = 'Money total exceeds safe integer cents'
+export const UNSAFE_CENTS_PRODUCT_MESSAGE =
+  'Money product exceeds safe integer cents'
 
 export function assertNonNegativeCents(amountCents: number): void {
   if (!Number.isSafeInteger(amountCents) || amountCents < 0) {
@@ -22,4 +24,12 @@ export function addCents(leftCents: number, rightCents: number): number {
     throw new Error(UNSAFE_CENTS_TOTAL_MESSAGE)
   }
   return totalCents
+}
+
+export function multiplyCents(amountCents: number, quantity: number): number {
+  const productCents = amountCents * quantity
+  if (!Number.isSafeInteger(productCents)) {
+    throw new Error(UNSAFE_CENTS_PRODUCT_MESSAGE)
+  }
+  return productCents
 }

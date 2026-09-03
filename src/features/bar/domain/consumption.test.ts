@@ -229,6 +229,27 @@ describe('consumption rules', () => {
     ).toThrow('Money amounts must use non-negative safe integer cents')
   })
 
+  it('rejects a consumption whose line total overflows safe integer cents', () => {
+    expect(() =>
+      recordConsumption(
+        {
+          tab: OPEN_TAB,
+          item: {
+            ...UNTRACKED_ITEM,
+            unitPriceCents: Number.MAX_SAFE_INTEGER,
+          },
+          quantity: 2,
+          chargeKind: CHARGE_KIND.CHARGED,
+          actorId: 'actor-1',
+        },
+        {
+          nextId: () => 'unexpected-id',
+          now: () => '2026-09-02T12:00:00.000Z',
+        },
+      ),
+    ).toThrow('Money product exceeds safe integer cents')
+  })
+
   it('marks consumption cancelled and creates a tracked-stock reversal', () => {
     const result = cancelConsumption(
       {
@@ -362,6 +383,26 @@ describe('consumption rules', () => {
           originalStockMovement: {
             ...ORIGINAL_STOCK_MOVEMENT,
             itemId: 'item-2',
+          },
+          actorId: 'actor-2',
+        },
+        {
+          nextId: () => 'unexpected-id',
+          now: () => '2026-09-02T13:00:00.000Z',
+        },
+      ),
+    ).toThrow('Original stock movement must match the consumption and item')
+  })
+
+  it('rejects an original stock movement with a mismatched quantity delta', () => {
+    expect(() =>
+      cancelConsumption(
+        {
+          consumption: ACTIVE_CONSUMPTION,
+          item: UNTRACKED_ITEM,
+          originalStockMovement: {
+            ...ORIGINAL_STOCK_MOVEMENT,
+            quantityDelta: -1,
           },
           actorId: 'actor-2',
         },

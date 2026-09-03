@@ -27,6 +27,16 @@ describe('bar financial rules', () => {
     expect(getConsumptionLineTotalCents(BASE_CONSUMPTION)).toBe(2_250)
   })
 
+  it('rejects a line total that overflows safe integer cents', () => {
+    expect(() =>
+      getConsumptionLineTotalCents({
+        ...BASE_CONSUMPTION,
+        quantity: 2,
+        unitPriceCents: Number.MAX_SAFE_INTEGER,
+      }),
+    ).toThrow('Money product exceeds safe integer cents')
+  })
+
   it('totals only active charged revenue and retains active courtesies', () => {
     const courtesy = {
       ...BASE_CONSUMPTION,

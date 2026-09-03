@@ -16,7 +16,7 @@ import type {
   Tab,
 } from './entities'
 import type { DomainDependencies } from './dependencies'
-import { assertNonNegativeCents } from './money'
+import { assertNonNegativeCents, multiplyCents } from './money'
 import { assertPositiveIntegerQuantity } from './quantity'
 
 const CLOSED_TAB_MESSAGE = 'Cannot add consumption to a closed tab'
@@ -62,6 +62,7 @@ export function recordConsumption(
   assertPositiveIntegerQuantity(input.quantity)
   assertNonNegativeCents(input.item.unitPriceCents)
   assertNonNegativeCents(input.item.unitCostCents)
+  multiplyCents(input.item.unitPriceCents, input.quantity)
 
   const consumption = createConsumption(input, dependencies)
 
@@ -139,7 +140,7 @@ export function cancelConsumption(
       id: dependencies.nextId(),
       itemId: input.item.id,
       kind: STOCK_MOVEMENT_KIND.REVERSAL,
-      quantityDelta: input.consumption.quantity,
+      quantityDelta: -input.originalStockMovement.quantityDelta,
       occurredAt: cancelledAt,
       actorId: input.actorId,
       consumptionId: input.consumption.id,
@@ -158,7 +159,8 @@ function assertValidCancellation(input: CancelConsumptionInput): void {
   if (
     input.originalStockMovement.kind !== STOCK_MOVEMENT_KIND.CONSUMPTION ||
     input.originalStockMovement.consumptionId !== input.consumption.id ||
-    input.originalStockMovement.itemId !== input.item.id
+    input.originalStockMovement.itemId !== input.item.id ||
+    input.originalStockMovement.quantityDelta !== -input.consumption.quantity
   ) {
     throw new Error(STOCK_MOVEMENT_MISMATCH_MESSAGE)
   }

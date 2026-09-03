@@ -1,9 +1,9 @@
 import { CHARGE_KIND, CONSUMPTION_STATUS } from './constants'
 import type { Consumption } from './entities'
-import { addCents } from './money'
+import { addCents, multiplyCents } from './money'
 
 export function getConsumptionLineTotalCents(consumption: Consumption): number {
-  return consumption.quantity * consumption.unitPriceCents
+  return multiplyCents(consumption.unitPriceCents, consumption.quantity)
 }
 
 export function summarizeTabConsumptions(consumptions: readonly Consumption[]): {
