@@ -28,7 +28,7 @@ describe('monthly consolidation', () => {
     const september = consumption(
       'consumption-1',
       'member-1',
-      '2026-09-30T23:59:59.000Z',
+      new Date(2026, 8, 30, 23, 59).toISOString(),
     )
     const result = consolidateMonth(
       {
@@ -36,8 +36,16 @@ describe('monthly consolidation', () => {
         memberIds: ['member-1'],
         consumptions: [
           september,
-          consumption('visitor-consumption', 'visitor-1', '2026-09-02T12:00:00.000Z'),
-          consumption('october-consumption', 'member-1', '2026-10-01T00:00:00.000Z'),
+          consumption(
+            'visitor-consumption',
+            'visitor-1',
+            new Date(2026, 8, 2, 12, 0).toISOString(),
+          ),
+          consumption(
+            'october-consumption',
+            'member-1',
+            new Date(2026, 9, 1, 0, 0).toISOString(),
+          ),
         ],
         actorId: 'actor-2',
       },
@@ -68,6 +76,39 @@ describe('monthly consolidation', () => {
       closedAt: '2026-10-01T12:00:00.000Z',
       actorId: 'actor-2',
     })
+  })
+
+  it('assigns consumptions by their local month, not their UTC month', () => {
+    const lastLocalMinuteOfSeptember = new Date(2026, 8, 30, 23, 59)
+    const firstLocalMinuteOfOctober = new Date(2026, 9, 1, 0, 0)
+    const firstLocalMinuteOfSeptember = new Date(2026, 8, 1, 0, 0)
+    const lastLocalMinuteOfAugust = new Date(2026, 7, 31, 23, 59)
+
+    const result = consolidateMonth(
+      {
+        month: '2026-09',
+        memberIds: ['member-1'],
+        consumptions: [
+          consumption('opening', 'member-1', firstLocalMinuteOfSeptember.toISOString()),
+          consumption('closing', 'member-1', lastLocalMinuteOfSeptember.toISOString()),
+          consumption('october', 'member-1', firstLocalMinuteOfOctober.toISOString()),
+          consumption('august', 'member-1', lastLocalMinuteOfAugust.toISOString()),
+        ],
+        actorId: 'actor-2',
+      },
+      {
+        nextId: (() => {
+          const ids = ['statement-1', 'closing-1']
+          return () => ids.shift() ?? 'unexpected-id'
+        })(),
+        now: () => '2026-10-01T12:00:00.000Z',
+      },
+    )
+
+    expect(result.statements[0].consumptions.map(({ id }) => id)).toEqual([
+      'opening',
+      'closing',
+    ])
   })
 
   it('rejects a month outside YYYY-MM format', () => {

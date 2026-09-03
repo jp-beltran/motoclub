@@ -4,6 +4,7 @@ import type {
   MonthlyClosing,
 } from './entities'
 import type { DomainDependencies } from './dependencies'
+import { getMonthKey } from './month'
 
 const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/
 const INVALID_MONTH_MESSAGE = 'Month must use YYYY-MM format'
@@ -34,7 +35,7 @@ export function consolidateMonth(
       .filter(
         (consumption) =>
           consumption.consumerId === memberId &&
-          consumption.createdAt.startsWith(`${input.month}-`),
+          getMonthKey(consumption.createdAt) === input.month,
       )
       .map((consumption) => Object.freeze({ ...consumption }))
 
