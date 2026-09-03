@@ -250,6 +250,27 @@ describe('consumption rules', () => {
     ).toThrow('Money product exceeds safe integer cents')
   })
 
+  it('rejects a consumption whose cost total overflows safe integer cents', () => {
+    expect(() =>
+      recordConsumption(
+        {
+          tab: OPEN_TAB,
+          item: {
+            ...UNTRACKED_ITEM,
+            unitCostCents: Number.MAX_SAFE_INTEGER,
+          },
+          quantity: 2,
+          chargeKind: CHARGE_KIND.CHARGED,
+          actorId: 'actor-1',
+        },
+        {
+          nextId: () => 'unexpected-id',
+          now: () => '2026-09-02T12:00:00.000Z',
+        },
+      ),
+    ).toThrow('Money product exceeds safe integer cents')
+  })
+
   it('marks consumption cancelled and creates a tracked-stock reversal', () => {
     const result = cancelConsumption(
       {

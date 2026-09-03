@@ -63,6 +63,7 @@ export function recordConsumption(
   assertNonNegativeCents(input.item.unitPriceCents)
   assertNonNegativeCents(input.item.unitCostCents)
   multiplyCents(input.item.unitPriceCents, input.quantity)
+  multiplyCents(input.item.unitCostCents, input.quantity)
 
   const consumption = createConsumption(input, dependencies)
 
