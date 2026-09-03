@@ -2,6 +2,17 @@
 
 @theme {
   --font-sans: Inter, ui-sans-serif, system-ui, sans-serif;
+
+  --color-surface-base: #101114;
+  --color-surface-raised: #181a1f;
+  --color-surface-overlay: #20232a;
+  --color-border-subtle: #2c3038;
+  --color-content-primary: #f5f6f7;
+  --color-content-muted: #a2a8b4;
+  --color-accent: #e0203a;
+  --color-accent-strong: #c1152d;
+  --color-positive: #2bb673;
+  --color-warning: #e4a11b;
 }
 
 body {
