@@ -4,20 +4,14 @@ import { formatCents, formatDateTime } from '../../../../shared/format'
 import { Button } from '../../../../shared/ui/Button'
 import { Card } from '../../../../shared/ui/Card'
 import { CURRENT_ACTOR_ID, CURRENT_ACTOR_NAME } from '../../application/actor'
-import { PAYMENT_STATUS, type PaymentStatus } from '../../domain/constants'
+import { formatPaymentStatusLabel, getPaymentStatusTone } from '../../application/payment-status'
 import type { Payment } from '../../domain/entities'
 import { parsePaymentAmount } from './payment-amount'
-import type { PendingTarget } from './pending-targets'
+import { formatPendingTargetKindLabel, type PendingTarget } from './pending-targets'
 
 const FIELD_CLASSES =
   'min-h-11 rounded-md border border-border-subtle bg-surface-raised px-3 text-sm text-content-primary ' +
   'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent'
-
-const PAYMENT_STATUS_LABELS: Record<PaymentStatus, string> = {
-  [PAYMENT_STATUS.UNPAID]: 'Não pago',
-  [PAYMENT_STATUS.PARTIAL]: 'Parcial',
-  [PAYMENT_STATUS.PAID]: 'Pago',
-}
 
 export interface PendingTargetRowProps {
   readonly target: PendingTarget
@@ -62,9 +56,12 @@ export function PendingTargetRow({
     <Card className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-content-muted">
+            {formatPendingTargetKindLabel(target.target)}
+          </p>
           <p className="font-semibold text-content-primary">{target.label}</p>
-          <p className="mt-1 text-sm font-semibold text-warning">
-            {PAYMENT_STATUS_LABELS[target.payment.status]}
+          <p className={`mt-1 text-sm font-semibold ${getPaymentStatusTone(target.payment.status)}`}>
+            {formatPaymentStatusLabel(target.payment.status)}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-4 text-sm">

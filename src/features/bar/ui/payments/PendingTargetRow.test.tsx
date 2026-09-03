@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
 import { formatDateTime } from '../../../../shared/format'
+import { getPaymentStatusTone } from '../../application/payment-status'
 import { PAYMENT_STATUS, PAYMENT_TARGET } from '../../domain/constants'
 import type { PendingTarget } from './pending-targets'
 import { PendingTargetRow } from './PendingTargetRow'
@@ -175,5 +176,61 @@ describe('PendingTargetRow', () => {
 
     expect(screen.getByText(formatDateTime('2026-09-19T21:00:00.000Z'))).toBeInTheDocument()
     expect(screen.getByText('Gestor')).toBeInTheDocument()
+  })
+
+  it('colors the payment status per status, matching the shared tone used on /comandas', () => {
+    const { rerender } = render(
+      <PendingTargetRow
+        target={makeTarget({ payment: { paidCents: 0, remainingCents: 1200, status: PAYMENT_STATUS.UNPAID } })}
+        expanded={false}
+        onToggle={vi.fn()}
+        onSubmit={vi.fn()}
+        isSubmitting={false}
+      />,
+    )
+    expect(screen.getByText('Não pago')).toHaveClass(getPaymentStatusTone(PAYMENT_STATUS.UNPAID))
+
+    rerender(
+      <PendingTargetRow
+        target={makeTarget({ payment: { paidCents: 1200, remainingCents: 0, status: PAYMENT_STATUS.PAID } })}
+        expanded={false}
+        onToggle={vi.fn()}
+        onSubmit={vi.fn()}
+        isSubmitting={false}
+      />,
+    )
+    // Paid must never render with the same tone as unpaid/partial — this
+    // regresses if the row goes back to hardcoding one tone for every status.
+    // Scoped to <p> — "Pago" also appears as the "Pago" money field's <span> label.
+    const paidStatus = screen.getByText('Pago', { selector: 'p' })
+    expect(paidStatus).toHaveClass(getPaymentStatusTone(PAYMENT_STATUS.PAID))
+    expect(paidStatus).not.toHaveClass('text-warning')
+  })
+
+  it('labels the target kind, comanda or extrato mensal, so it cannot be mistaken for the other', () => {
+    const { rerender } = render(
+      <PendingTargetRow
+        target={makeTarget({ target: PAYMENT_TARGET.TAB, label: 'Rafael Oliveira — Encontro de setembro' })}
+        expanded={false}
+        onToggle={vi.fn()}
+        onSubmit={vi.fn()}
+        isSubmitting={false}
+      />,
+    )
+    expect(screen.getByText('Comanda')).toBeInTheDocument()
+
+    rerender(
+      <PendingTargetRow
+        target={makeTarget({
+          target: PAYMENT_TARGET.STATEMENT, targetId: 'statement-ana-2026-09',
+          label: 'Ana Paula — setembro de 2026',
+        })}
+        expanded={false}
+        onToggle={vi.fn()}
+        onSubmit={vi.fn()}
+        isSubmitting={false}
+      />,
+    )
+    expect(screen.getByText('Extrato mensal')).toBeInTheDocument()
   })
 })

@@ -81,6 +81,20 @@ export function pendingTargetKey(target: Pick<PendingTarget, 'target' | 'targetI
   return `${target.target}:${target.targetId}`
 }
 
+const PENDING_TARGET_KIND_LABELS: Readonly<Record<PaymentTarget, string>> = {
+  [PAYMENT_TARGET.TAB]: 'Comanda',
+  [PAYMENT_TARGET.STATEMENT]: 'Extrato mensal',
+}
+
+/**
+ * A pt-BR label naming the kind of a payment target — a visitor's event
+ * name and a member's month name can otherwise look alike, and the kind is
+ * exactly what makes a payment legal (`target: 'tab'` vs `'statement'`).
+ */
+export function formatPendingTargetKindLabel(target: PaymentTarget): string {
+  return PENDING_TARGET_KIND_LABELS[target]
+}
+
 function findTargetPayments(
   snapshot: BarDatabase,
   target: PaymentTarget,
