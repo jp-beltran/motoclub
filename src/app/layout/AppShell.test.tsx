@@ -1,29 +1,22 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { Route, Routes } from 'react-router-dom'
 import { describe, expect, it, vi } from 'vitest'
 
-import { BarRepositoryProvider } from '../../features/bar/application/repository-context'
 import { BarPersistenceError } from '../../features/bar/infrastructure/local-bar-repository'
 import { createFakeBarRepository } from '../../test/fake-bar-repository'
+import { renderWithBar } from '../../test/render-with-bar'
 import { AppShell } from './AppShell'
 
 function renderAppShell(repository: ReturnType<typeof createFakeBarRepository>) {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <BarRepositoryProvider repository={repository}>
-        <MemoryRouter initialEntries={['/']}>
-          <Routes>
-            <Route element={<AppShell />}>
-              <Route index element={<p>Conteúdo da rota</p>} />
-              <Route path="lancamentos" element={<p>Lançamentos</p>} />
-            </Route>
-          </Routes>
-        </MemoryRouter>
-      </BarRepositoryProvider>
-    </QueryClientProvider>,
+  return renderWithBar(
+    <Routes>
+      <Route element={<AppShell />}>
+        <Route index element={<p>Conteúdo da rota</p>} />
+        <Route path="lancamentos" element={<p>Lançamentos</p>} />
+      </Route>
+    </Routes>,
+    { repository },
   )
 }
 

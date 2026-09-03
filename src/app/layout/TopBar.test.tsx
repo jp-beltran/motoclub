@@ -1,26 +1,13 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import type { ReactNode } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { CURRENT_ACTOR_NAME } from '../../features/bar/application/actor'
-import { BarRepositoryProvider } from '../../features/bar/application/repository-context'
-import { createFakeBarRepository } from '../../test/fake-bar-repository'
+import { renderWithBar } from '../../test/render-with-bar'
 import { TopBar } from './TopBar'
 
 function renderTopBar(activeEventName?: string) {
-  const repository = createFakeBarRepository()
-  const queryClient = new QueryClient()
-  function Wrapper({ children }: { children: ReactNode }) {
-    return (
-      <QueryClientProvider client={queryClient}>
-        <BarRepositoryProvider repository={repository}>{children}</BarRepositoryProvider>
-      </QueryClientProvider>
-    )
-  }
-
-  render(<TopBar activeEventName={activeEventName} />, { wrapper: Wrapper })
+  const { repository } = renderWithBar(<TopBar activeEventName={activeEventName} />)
   return { repository }
 }
 

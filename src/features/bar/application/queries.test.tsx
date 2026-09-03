@@ -1,19 +1,20 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import type { QueryClient } from '@tanstack/react-query'
 import { renderHook, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 
+import { BarTestProviders } from '../../../test/bar-test-providers'
 import { createFakeBarRepository } from '../../../test/fake-bar-repository'
+import { createBarQueryClient } from '../../../test/render-with-bar'
 import type { BarRepository } from './bar-repository'
 import { barKeys, useBarSnapshot, useResetDemo } from './queries'
-import { BarRepositoryProvider } from './repository-context'
 
 function createWrapper(repository: BarRepository, queryClient: QueryClient) {
   return function Wrapper({ children }: { children: ReactNode }) {
     return (
-      <QueryClientProvider client={queryClient}>
-        <BarRepositoryProvider repository={repository}>{children}</BarRepositoryProvider>
-      </QueryClientProvider>
+      <BarTestProviders repository={repository} queryClient={queryClient}>
+        {children}
+      </BarTestProviders>
     )
   }
 }
@@ -21,7 +22,7 @@ function createWrapper(repository: BarRepository, queryClient: QueryClient) {
 describe('useBarSnapshot', () => {
   it('returns the repository snapshot', async () => {
     const repository = createFakeBarRepository()
-    const queryClient = new QueryClient()
+    const queryClient = createBarQueryClient()
 
     const { result } = renderHook(() => useBarSnapshot(), {
       wrapper: createWrapper(repository, queryClient),
@@ -38,7 +39,7 @@ describe('useBarSnapshot', () => {
 describe('useResetDemo', () => {
   it('calls repository.resetDemo and invalidates the snapshot query on success', async () => {
     const repository = createFakeBarRepository()
-    const queryClient = new QueryClient()
+    const queryClient = createBarQueryClient()
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
     const wrapper = createWrapper(repository, queryClient)
 

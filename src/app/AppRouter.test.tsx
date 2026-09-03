@@ -1,24 +1,11 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
+import { screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
-import { BarRepositoryProvider } from '../features/bar/application/repository-context'
-import { createFakeBarRepository } from '../test/fake-bar-repository'
+import { renderWithBar } from '../test/render-with-bar'
 import { AppRouter } from './AppRouter'
 
 function renderAt(path: string) {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  const repository = createFakeBarRepository()
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <BarRepositoryProvider repository={repository}>
-        <MemoryRouter initialEntries={[path]}>
-          <AppRouter />
-        </MemoryRouter>
-      </BarRepositoryProvider>
-    </QueryClientProvider>,
-  )
+  return renderWithBar(<AppRouter />, { route: path })
 }
 
 describe('AppRouter', () => {
