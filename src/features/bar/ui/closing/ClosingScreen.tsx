@@ -5,6 +5,7 @@ import { CURRENT_ACTOR_ID } from '../../application/actor'
 import type { BarDatabase } from '../../application/bar-repository'
 import { useBarSnapshot, useInvalidateBar } from '../../application/queries'
 import { useBarRepository } from '../../application/repository-context'
+import { BAR_ERROR_FALLBACKS, describeBarError } from '../../application/error-messages'
 import { describePaymentStatus } from '../../application/payment-status'
 import type { MemberStatement, MonthlyClosing } from '../../domain/entities'
 import { formatMonth, getCurrentMonth } from '../../../../shared/date'
@@ -13,7 +14,6 @@ import { Button } from '../../../../shared/ui/Button'
 import { Card } from '../../../../shared/ui/Card'
 import { EmptyState } from '../../../../shared/ui/EmptyState'
 import { ChargeMessageCard } from './ChargeMessageCard'
-import { describeClosingError } from './closing-messages'
 import {
   buildMonthPreview,
   listClosingMonths,
@@ -90,7 +90,9 @@ export function ClosingScreen() {
           onStartClose={() => createClosing.reset()}
           isClosing={createClosing.isPending}
           errorMessage={
-            createClosing.isError ? describeClosingError(createClosing.error) : undefined
+            createClosing.isError
+              ? describeBarError(createClosing.error, BAR_ERROR_FALLBACKS.monthlyClosing)
+              : undefined
           }
         />
       ) : null}

@@ -8,10 +8,10 @@ import { CURRENT_ACTOR_ID } from '../../application/actor'
 import type { AddStockMovementInput } from '../../application/bar-repository'
 import { useInvalidateBar, useBarSnapshot } from '../../application/queries'
 import { useBarRepository } from '../../application/repository-context'
+import { BAR_ERROR_FALLBACKS, describeBarError } from '../../application/error-messages'
 import { STOCK_MOVEMENT_KIND } from '../../domain/constants'
 import { StockStatusBadge } from './StockStatusBadge'
 import {
-  describeMovementError,
   formatActorName,
   formatMovementKind,
   parseMovementQuantity,
@@ -155,7 +155,7 @@ export function InventoryView() {
           )}
           {mutation.isError && (
             <p role="alert" className="text-sm font-medium text-accent">
-              {describeMovementError(mutation.error)}
+              {describeBarError(mutation.error, BAR_ERROR_FALLBACKS.stockMovement)}
             </p>
           )}
 

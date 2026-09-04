@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
+import { expectBarErrorCode } from '../../../test/bar-error-assertions'
 import { CHARGE_KIND, CONSUMPTION_STATUS } from './constants'
 import type { Consumption, Item } from './entities'
 import {
@@ -29,13 +30,12 @@ describe('bar financial rules', () => {
   })
 
   it('rejects a line total that overflows safe integer cents', () => {
-    expect(() =>
+    expectBarErrorCode(() =>
       getConsumptionLineTotalCents({
         ...BASE_CONSUMPTION,
         quantity: 2,
         unitPriceCents: Number.MAX_SAFE_INTEGER,
-      }),
-    ).toThrow('Money product exceeds safe integer cents')
+      }), 'money-product-overflow')
   })
 
   it('totals only active charged revenue and retains active courtesies', () => {
@@ -93,21 +93,19 @@ describe('bar financial rules', () => {
   })
 
   it('rejects revenue totals that overflow safe integer cents', () => {
-    expect(() =>
+    expectBarErrorCode(() =>
       summarizeTabConsumptions([
         { ...BASE_CONSUMPTION, quantity: 1, unitPriceCents: Number.MAX_SAFE_INTEGER },
         { ...BASE_CONSUMPTION, id: 'consumption-2', quantity: 1, unitPriceCents: 1 },
-      ]),
-    ).toThrow('Money total exceeds safe integer cents')
+      ]), 'money-total-overflow')
   })
 
   it('rejects cost totals that overflow safe integer cents', () => {
-    expect(() =>
+    expectBarErrorCode(() =>
       calculateFinancials([
         { ...BASE_CONSUMPTION, quantity: 1, unitCostCents: Number.MAX_SAFE_INTEGER },
         { ...BASE_CONSUMPTION, id: 'consumption-2', quantity: 1, unitCostCents: 1 },
-      ]),
-    ).toThrow('Money total exceeds safe integer cents')
+      ]), 'money-total-overflow')
   })
 })
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
+import { expectBarErrorCode } from '../../../test/bar-error-assertions'
 import { getMonthKey } from './month'
 
 describe('month keys', () => {
@@ -36,8 +37,6 @@ describe('month keys', () => {
   })
 
   it('rejects a timestamp it cannot parse', () => {
-    expect(() => getMonthKey('not-a-timestamp')).toThrow(
-      'Timestamp must be a parseable date',
-    )
+    expectBarErrorCode(() => getMonthKey('not-a-timestamp'), 'timestamp-invalid')
   })
 })

@@ -9,6 +9,7 @@ import { getCurrentMonth } from '../../../../shared/date'
 import type { StorageLike } from '../../application/bar-repository'
 import { summarizeTab } from '../../application/tab-summary'
 import { PAYMENT_STATUS, PAYMENT_TARGET } from '../../domain/constants'
+import { BarError } from '../../domain/errors'
 import { LocalBarRepository } from '../../infrastructure/local-bar-repository'
 import { createDemoDatabase } from '../../infrastructure/demo-seed'
 import { PagamentosView } from './PagamentosView'
@@ -136,7 +137,7 @@ describe('PagamentosView', () => {
     const repository = createFakeBarRepository(
       {
         recordPayment: vi.fn(async () => {
-          throw new Error('Payment cannot exceed the amount due')
+          throw new BarError('payment-exceeds-balance', 'Payment cannot exceed the amount due')
         }),
       },
       createDemoDatabase(),

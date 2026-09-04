@@ -27,10 +27,12 @@ import {
   TAB_STATUS,
 } from '../domain/constants'
 import {
+  CANCELLATION_BLOCK_CODES,
   CANCELLATION_BLOCK_REASONS,
   findCancellationBlock,
 } from '../domain/cancellation'
 import { cancelConsumption, recordConsumption } from '../domain/consumption'
+import { BarError, type BarErrorCode, type StoredDataErrorCode } from '../domain/errors'
 import { summarizeTabConsumptions } from '../domain/financials'
 import { summarizePayments } from '../domain/payments'
 import type {
@@ -62,16 +64,29 @@ const INACTIVE_MEMBER_MESSAGE = 'Consumer must be an active member'
 const MISMATCHED_MONTH_MESSAGE = 'Monthly tab month must match the current month'
 const MONTH_PATTERN = /^\d{4}-(?:0[1-9]|1[0-2])$/
 
-export type BarPersistenceErrorCode =
-  | 'malformed-json'
-  | 'unsupported-version'
-  | 'invalid-data'
+/** The codes `findIndexById` may raise, one per entity the repository looks up. */
+type NotFoundErrorCode = Extract<
+  BarErrorCode,
+  | 'consumer-not-found'
+  | 'event-not-found'
+  | 'item-not-found'
+  | 'tab-not-found'
+  | 'consumption-not-found'
+  | 'payment-target-not-found'
+>
 
-export class BarPersistenceError extends Error {
+/**
+ * A `BarError` raised while reading the stored bar database, marked
+ * `recoverable` because the shell can offer "Restaurar demonstração" instead
+ * of a dead end. It narrows `BarError` rather than declaring a second code
+ * scheme: its codes are members of the one `BarErrorCode` union, so the
+ * single pt-BR table covers them like any other failure.
+ */
+export class BarPersistenceError extends BarError {
   readonly recoverable = true
 
-  constructor(readonly code: BarPersistenceErrorCode, message: string) {
-    super(message)
+  constructor(code: StoredDataErrorCode, message: string) {
+    super(code, message)
     this.name = 'BarPersistenceError'
   }
 }
@@ -106,7 +121,7 @@ export class LocalBarRepository implements BarRepository {
   async createVisitor(input: CreateVisitorInput): Promise<Consumer> {
     return this.update((database) => {
       const name = input.name.trim()
-      if (!name) throw new Error('Visitor name is required')
+      if (!name) throw new BarError('visitor-name-required', 'Visitor name is required')
       const visitor: Consumer = {
         id: this.dependencies.nextId(),
         name,
@@ -121,11 +136,13 @@ export class LocalBarRepository implements BarRepository {
 
   async ensureEventTab(input: EnsureEventTabInput): Promise<EventTab> {
     return this.update((database) => {
-      const event = findById(database.events, input.eventId, 'Event')
+      const event = findById(database.events, input.eventId, 'event-not-found', 'Event')
       assertActiveEvent(event)
-      const visitor = findById(database.consumers, input.visitorId, 'Visitor')
+      const visitor = findById(
+        database.consumers, input.visitorId, 'consumer-not-found', 'Visitor',
+      )
       if (visitor.kind !== CONSUMER_KIND.VISITOR || visitor.active === false) {
-        throw new Error('Consumer must be an active visitor')
+        throw new BarError('consumer-not-active-visitor', 'Consumer must be an active visitor')
       }
       const existingIndex = database.tabs.findIndex((tab) =>
         tab.kind === TAB_KIND.EVENT && tab.eventId === input.eventId &&
@@ -159,10 +176,14 @@ export class LocalBarRepository implements BarRepository {
    */
   async ensureMonthlyTab(input: EnsureMonthlyTabInput): Promise<MonthlyTab> {
     return this.update((database) => {
-      if (!MONTH_PATTERN.test(input.month)) throw new Error(INVALID_MONTH_MESSAGE)
-      const member = findById(database.consumers, input.memberId, 'Member')
+      if (!MONTH_PATTERN.test(input.month)) {
+        throw new BarError('month-format-invalid', INVALID_MONTH_MESSAGE)
+      }
+      const member = findById(
+        database.consumers, input.memberId, 'consumer-not-found', 'Member',
+      )
       if (member.kind !== CONSUMER_KIND.MEMBER || member.active === false) {
-        throw new Error(INACTIVE_MEMBER_MESSAGE)
+        throw new BarError('consumer-not-active-member', INACTIVE_MEMBER_MESSAGE)
       }
       const existing = database.tabs.find((tab) =>
         tab.kind === TAB_KIND.MONTHLY && tab.memberId === member.id &&
@@ -173,7 +194,9 @@ export class LocalBarRepository implements BarRepository {
       }
       const openedAt = this.dependencies.now()
       const month = getMonthKey(openedAt)
-      if (month !== input.month) throw new Error(MISMATCHED_MONTH_MESSAGE)
+      if (month !== input.month) {
+        throw new BarError('monthly-tab-month-mismatch', MISMATCHED_MONTH_MESSAGE)
+      }
       const tab: MonthlyTab = {
         id: this.dependencies.nextId(), kind: TAB_KIND.MONTHLY, status: TAB_STATUS.OPEN,
         memberId: member.id, month, openedAt,
@@ -188,7 +211,7 @@ export class LocalBarRepository implements BarRepository {
       const active = database.events.find(({ status }) => status === EVENT_STATUS.ACTIVE)
       if (active) return active
       const name = input.name.trim()
-      if (!name) throw new Error('Event name is required')
+      if (!name) throw new BarError('event-name-required', 'Event name is required')
       const event: Event = {
         id: this.dependencies.nextId(), name,
         startsAt: input.startsAt ?? this.dependencies.now(), status: EVENT_STATUS.ACTIVE,
@@ -210,7 +233,9 @@ export class LocalBarRepository implements BarRepository {
     input: EditConsumptionQuantityInput,
   ): Promise<EditConsumptionQuantityResult> {
     return this.update((database) => {
-      const current = findById(database.consumptions, input.consumptionId, 'Consumption')
+      const current = findById(
+        database.consumptions, input.consumptionId, 'consumption-not-found', 'Consumption',
+      )
       const cancellation = this.cancelConsumptionInDatabase(database, input)
       const replacementResult = this.recordConsumption(database, {
         tabId: current.tabId,
@@ -230,15 +255,21 @@ export class LocalBarRepository implements BarRepository {
 
   async reassignConsumption(input: ReassignConsumptionInput): Promise<Consumption> {
     return this.update((database) => {
-      const consumptionIndex = findIndexById(database.consumptions, input.consumptionId, 'Consumption')
+      const consumptionIndex = findIndexById(
+        database.consumptions, input.consumptionId, 'consumption-not-found', 'Consumption',
+      )
       const consumption = database.consumptions[consumptionIndex]
       if (consumption.status !== CONSUMPTION_STATUS.ACTIVE) {
-        throw new Error('Only active consumption can be reassigned')
+        throw new BarError(
+          'consumption-not-reassignable', 'Only active consumption can be reassigned',
+        )
       }
-      const sourceTab = findById(database.tabs, consumption.tabId, 'Source tab')
-      const targetTab = findById(database.tabs, input.targetTabId, 'Target tab')
+      const sourceTab = findById(database.tabs, consumption.tabId, 'tab-not-found', 'Source tab')
+      const targetTab = findById(database.tabs, input.targetTabId, 'tab-not-found', 'Target tab')
       if (targetTab.status !== TAB_STATUS.OPEN || targetTab.kind !== sourceTab.kind) {
-        throw new Error('Target tab must be open and compatible')
+        throw new BarError(
+          'reassign-target-tab-invalid', 'Target tab must be open and compatible',
+        )
       }
       const reassigned: Consumption = {
         ...consumption,
@@ -264,7 +295,7 @@ export class LocalBarRepository implements BarRepository {
       assertPositiveCents(input.amountCents)
       const consumptions = resolvePaymentTargetConsumptions(database, input)
       if (input.amountCents > calculateRemainingCents(database, input, consumptions)) {
-        throw new Error(EXCESSIVE_PAYMENT_MESSAGE)
+        throw new BarError('payment-exceeds-balance', EXCESSIVE_PAYMENT_MESSAGE)
       }
       const payment: Payment = {
         id: this.dependencies.nextId(), target: input.target, targetId: input.targetId,
@@ -278,7 +309,7 @@ export class LocalBarRepository implements BarRepository {
   async createMonthlyClosing(input: CreateMonthlyClosingInput) {
     return this.update((database) => {
       if (database.monthlyClosings.some(({ month }) => month === input.month)) {
-        throw new Error('Monthly closing already exists')
+        throw new BarError('monthly-closing-already-exists', 'Monthly closing already exists')
       }
       const memberIds = database.consumers
         .filter(({ kind, active }) => kind === CONSUMER_KIND.MEMBER && active !== false)
@@ -297,9 +328,11 @@ export class LocalBarRepository implements BarRepository {
   async addStockMovement(input: AddStockMovementInput): Promise<StockMovement> {
     return this.update((database) => {
       assertValidManualMovement(input)
-      const itemIndex = findIndexById(database.items, input.itemId, 'Item')
+      const itemIndex = findIndexById(database.items, input.itemId, 'item-not-found', 'Item')
       const item = database.items[itemIndex]
-      if (item.stockQuantity === undefined) throw new Error('Item does not track stock')
+      if (item.stockQuantity === undefined) {
+        throw new BarError('item-stock-not-tracked', 'Item does not track stock')
+      }
       const stockQuantity = calculateStockQuantity(item.stockQuantity, input.quantityDelta)
       const movement: StockMovement = {
         id: this.dependencies.nextId(), itemId: item.id, kind: input.kind,
@@ -317,9 +350,11 @@ export class LocalBarRepository implements BarRepository {
     status: typeof TAB_STATUS.OPEN | typeof TAB_STATUS.CLOSED,
   ): Promise<EventTab> {
     return this.update((database) => {
-      const index = findIndexById(database.tabs, tabId, 'Tab')
+      const index = findIndexById(database.tabs, tabId, 'tab-not-found', 'Tab')
       const tab = database.tabs[index]
-      if (tab.kind !== TAB_KIND.EVENT) throw new Error('Tab must belong to a visitor')
+      if (tab.kind !== TAB_KIND.EVENT) {
+        throw new BarError('tab-not-visitor-tab', 'Tab must belong to a visitor')
+      }
       assertActiveEventTab(database, tab)
       const updated: EventTab = status === TAB_STATUS.CLOSED
         ? { ...tab, status, closedAt: this.dependencies.now() }
@@ -342,11 +377,13 @@ export class LocalBarRepository implements BarRepository {
 
   private recordConsumption(database: BarDatabase, input: CreateConsumptionInput) {
     if (!Number.isSafeInteger(input.quantity) || input.quantity <= 0) {
-      throw new Error('Consumption quantity must be a positive safe integer')
+      throw new BarError(
+        'consumption-quantity-invalid', 'Consumption quantity must be a positive safe integer',
+      )
     }
-    const tab = findById(database.tabs, input.tabId, 'Tab')
+    const tab = findById(database.tabs, input.tabId, 'tab-not-found', 'Tab')
     assertActiveEventTab(database, tab)
-    const itemIndex = findIndexById(database.items, input.itemId, 'Item')
+    const itemIndex = findIndexById(database.items, input.itemId, 'item-not-found', 'Item')
     const item = database.items[itemIndex]
     const result = recordConsumption({
       tab, item, quantity: input.quantity, chargeKind: input.chargeKind,
@@ -369,16 +406,23 @@ export class LocalBarRepository implements BarRepository {
     database: BarDatabase,
     input: CancelConsumptionRepositoryInput,
   ) {
-    const index = findIndexById(database.consumptions, input.consumptionId, 'Consumption')
+    const index = findIndexById(
+      database.consumptions, input.consumptionId, 'consumption-not-found', 'Consumption',
+    )
     const consumption = database.consumptions[index]
     assertCancellable(database, consumption.id)
-    const itemIndex = findIndexById(database.items, consumption.itemId, 'Item')
+    const itemIndex = findIndexById(
+      database.items, consumption.itemId, 'item-not-found', 'Item',
+    )
     const item = database.items[itemIndex]
     const originalStockMovement = database.stockMovements.find(({ kind, consumptionId }) =>
       kind === STOCK_MOVEMENT_KIND.CONSUMPTION && consumptionId === consumption.id,
     )
     if (item.stockQuantity !== undefined && !originalStockMovement) {
-      throw new Error('Tracked consumption must have its original stock movement')
+      throw new BarError(
+        'consumption-stock-movement-missing',
+        'Tracked consumption must have its original stock movement',
+      )
     }
     const result = cancelConsumption({
       consumption, item, originalStockMovement, actorId: input.actorId,
@@ -403,7 +447,9 @@ export class LocalBarRepository implements BarRepository {
   private update<Result>(mutation: (database: BarDatabase) => Result): Promise<Result> {
     const database = clone(this.load(false))
     const result = mutation(database)
-    if (!isBarDatabase(database)) throw new Error('Mutation produced invalid bar data')
+    if (!isBarDatabase(database)) {
+      throw new BarError('database-mutation-invalid', 'Mutation produced invalid bar data')
+    }
     this.save(database)
     return Promise.resolve(clone(result))
   }
@@ -429,13 +475,15 @@ function parseEnvelope(bytes: string): BarDatabaseEnvelope {
   try {
     value = JSON.parse(bytes)
   } catch {
-    throw new BarPersistenceError('malformed-json', 'Stored bar data is malformed JSON')
+    throw new BarPersistenceError('stored-data-malformed', 'Stored bar data is malformed JSON')
   }
   if (!isRecord(value) || value.version !== 1) {
-    throw new BarPersistenceError('unsupported-version', 'Stored bar data uses an unsupported version')
+    throw new BarPersistenceError(
+      'stored-data-unsupported-version', 'Stored bar data uses an unsupported version',
+    )
   }
   if (!isBarDatabase(value.data)) {
-    throw new BarPersistenceError('invalid-data', INVALID_DATA_MESSAGE)
+    throw new BarPersistenceError('stored-data-invalid', INVALID_DATA_MESSAGE)
   }
   return value as unknown as BarDatabaseEnvelope
 }
@@ -610,18 +658,23 @@ function clone<Value>(value: Value): Value {
   return JSON.parse(JSON.stringify(value)) as Value
 }
 
+/**
+ * `code` is what crosses the boundary; `entity` only shapes the English
+ * developer detail, so "Item not found" and "Source tab not found" keep
+ * reading the way they always did in a stack trace.
+ */
 function findIndexById<Value extends { readonly id: string }>(
-  values: readonly Value[], id: string, entity: string,
+  values: readonly Value[], id: string, code: NotFoundErrorCode, entity: string,
 ): number {
   const index = values.findIndex((value) => value.id === id)
-  if (index < 0) throw new Error(`${entity} not found`)
+  if (index < 0) throw new BarError(code, `${entity} not found`)
   return index
 }
 
 function findById<Value extends { readonly id: string }>(
-  values: readonly Value[], id: string, entity: string,
+  values: readonly Value[], id: string, code: NotFoundErrorCode, entity: string,
 ): Value {
-  return values[findIndexById(values, id, entity)]
+  return values[findIndexById(values, id, code, entity)]
 }
 
 /**
@@ -633,16 +686,20 @@ function findById<Value extends { readonly id: string }>(
  */
 function assertCancellable(database: BarDatabase, consumptionId: string): void {
   const block = findCancellationBlock(database, consumptionId)
-  if (block) throw new Error(CANCELLATION_BLOCK_REASONS[block])
+  if (block) {
+    throw new BarError(CANCELLATION_BLOCK_CODES[block], CANCELLATION_BLOCK_REASONS[block])
+  }
 }
 
 function assertActiveEvent(event: Event): void {
-  if (event.status !== EVENT_STATUS.ACTIVE) throw new Error(INACTIVE_EVENT_MESSAGE)
+  if (event.status !== EVENT_STATUS.ACTIVE) {
+    throw new BarError('event-not-active', INACTIVE_EVENT_MESSAGE)
+  }
 }
 
 function assertActiveEventTab(database: BarDatabase, tab: Tab): void {
   if (tab.kind !== TAB_KIND.EVENT) return
-  assertActiveEvent(findById(database.events, tab.eventId, 'Event'))
+  assertActiveEvent(findById(database.events, tab.eventId, 'event-not-found', 'Event'))
 }
 
 function resolvePaymentTargetConsumptions(
@@ -650,10 +707,16 @@ function resolvePaymentTargetConsumptions(
   input: RecordPaymentInput,
 ): readonly Consumption[] {
   if (input.target !== PAYMENT_TARGET.TAB) {
-    return findById(database.memberStatements, input.targetId, 'Payment target').consumptions
+    return findById(
+      database.memberStatements, input.targetId, 'payment-target-not-found', 'Payment target',
+    ).consumptions
   }
-  const tab = findById(database.tabs, input.targetId, 'Payment target')
-  if (tab.kind !== TAB_KIND.EVENT) throw new Error(MONTHLY_TAB_PAYMENT_MESSAGE)
+  const tab = findById(
+    database.tabs, input.targetId, 'payment-target-not-found', 'Payment target',
+  )
+  if (tab.kind !== TAB_KIND.EVENT) {
+    throw new BarError('monthly-tab-payment-not-allowed', MONTHLY_TAB_PAYMENT_MESSAGE)
+  }
   return database.consumptions.filter(({ tabId }) => tabId === tab.id)
 }
 
@@ -673,17 +736,19 @@ function calculateRemainingCents(
 
 function assertValidManualMovement(input: AddStockMovementInput): void {
   if (!Number.isSafeInteger(input.quantityDelta) || input.quantityDelta === 0) {
-    throw new Error('Stock movement quantity must be a non-zero safe integer')
+    throw new BarError(
+      'stock-movement-quantity-invalid', 'Stock movement quantity must be a non-zero safe integer',
+    )
   }
   if (input.kind === STOCK_MOVEMENT_KIND.ENTRY && input.quantityDelta < 0) {
-    throw new Error('Stock entry quantity must be positive')
+    throw new BarError('stock-entry-quantity-invalid', 'Stock entry quantity must be positive')
   }
 }
 
 function calculateStockQuantity(current: number, delta: number): number {
   const stockQuantity = current + delta
   if (!Number.isSafeInteger(stockQuantity)) {
-    throw new Error('Stock quantity must be a safe integer')
+    throw new BarError('stock-quantity-overflow', 'Stock quantity must be a safe integer')
   }
   return stockQuantity
 }

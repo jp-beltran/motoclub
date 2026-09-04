@@ -16,6 +16,7 @@ import type {
   Tab,
 } from './entities'
 import type { DomainDependencies } from './dependencies'
+import { BarError } from './errors'
 import { assertNonNegativeCents, multiplyCents } from './money'
 import { assertPositiveIntegerQuantity } from './quantity'
 
@@ -56,7 +57,7 @@ export function recordConsumption(
   dependencies: DomainDependencies,
 ): ConsumptionResult {
   if (input.tab.status === TAB_STATUS.CLOSED) {
-    throw new Error(CLOSED_TAB_MESSAGE)
+    throw new BarError('tab-closed', CLOSED_TAB_MESSAGE)
   }
 
   assertPositiveIntegerQuantity(input.quantity)
@@ -151,10 +152,10 @@ export function cancelConsumption(
 
 function assertValidCancellation(input: CancelConsumptionInput): void {
   if (input.consumption.status !== CONSUMPTION_STATUS.ACTIVE) {
-    throw new Error(INACTIVE_CONSUMPTION_MESSAGE)
+    throw new BarError('consumption-already-cancelled', INACTIVE_CONSUMPTION_MESSAGE)
   }
   if (input.consumption.itemId !== input.item.id) {
-    throw new Error(CONSUMPTION_ITEM_MISMATCH_MESSAGE)
+    throw new BarError('consumption-item-mismatch', CONSUMPTION_ITEM_MISMATCH_MESSAGE)
   }
   if (input.originalStockMovement === undefined) return
   if (
@@ -163,6 +164,6 @@ function assertValidCancellation(input: CancelConsumptionInput): void {
     input.originalStockMovement.itemId !== input.item.id ||
     input.originalStockMovement.quantityDelta !== -input.consumption.quantity
   ) {
-    throw new Error(STOCK_MOVEMENT_MISMATCH_MESSAGE)
+    throw new BarError('stock-movement-mismatch', STOCK_MOVEMENT_MISMATCH_MESSAGE)
   }
 }

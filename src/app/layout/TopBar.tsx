@@ -1,11 +1,13 @@
 import { CURRENT_ACTOR_NAME } from '../../features/bar/application/actor'
 import { useResetDemo } from '../../features/bar/application/queries'
+import {
+  BAR_ERROR_FALLBACKS,
+  describeBarError,
+} from '../../features/bar/application/error-messages'
 import { Button } from '../../shared/ui/Button'
 
 const RESET_DEMO_CONFIRM_MESSAGE =
   'Restaurar os dados de demonstração? Isso substitui os dados salvos neste navegador.'
-const RESET_DEMO_ERROR_MESSAGE =
-  'Não foi possível restaurar a demonstração. Tente novamente.'
 
 interface TopBarProps {
   readonly activeEventName?: string
@@ -46,7 +48,7 @@ export function TopBar({ activeEventName }: TopBarProps) {
         </Button>
         {resetDemo.isError ? (
           <p role="alert" className="w-full text-right text-sm font-medium text-accent">
-            {RESET_DEMO_ERROR_MESSAGE}
+            {describeBarError(resetDemo.error, BAR_ERROR_FALLBACKS.resetDemo)}
           </p>
         ) : null}
       </div>

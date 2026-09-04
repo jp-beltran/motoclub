@@ -7,7 +7,7 @@ import { CURRENT_ACTOR_ID } from '../../application/actor'
 import type { RecordPaymentInput } from '../../application/bar-repository'
 import { useBarSnapshot, useInvalidateBar } from '../../application/queries'
 import { useBarRepository } from '../../application/repository-context'
-import { describePaymentError } from './payment-errors'
+import { BAR_ERROR_FALLBACKS, describeBarError } from '../../application/error-messages'
 import { listPendingTargets, pendingTargetKey, type PendingTarget } from './pending-targets'
 import { PendingTargetsList } from './PendingTargetsList'
 
@@ -96,7 +96,9 @@ export function PagamentosView() {
               : undefined
           }
           errorMessage={
-            paymentMutation.isError ? describePaymentError(paymentMutation.error) : undefined
+            paymentMutation.isError
+              ? describeBarError(paymentMutation.error, BAR_ERROR_FALLBACKS.payment)
+              : undefined
           }
         />
       ) : null}

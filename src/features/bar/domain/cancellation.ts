@@ -1,5 +1,6 @@
 import { CONSUMPTION_STATUS, PAYMENT_TARGET, TAB_STATUS } from './constants'
 import type { Consumption, MemberStatement, Payment, Tab } from './entities'
+import type { BarErrorCode } from './errors'
 import { summarizeTabConsumptions } from './financials'
 import { addCents } from './money'
 
@@ -26,6 +27,21 @@ export const CANCELLATION_BLOCK_REASONS: Readonly<Record<CancellationBlock, stri
   [CANCELLATION_BLOCK.CLOSED_TAB]: 'Consumption belongs to a closed tab',
   [CANCELLATION_BLOCK.SETTLED_PAYMENT]:
     'Consumption is covered by a settled payment',
+}
+
+/**
+ * The code each block raises. `Record<CancellationBlock, BarErrorCode>` with
+ * no cast, so a new block cannot ship without a code — and the code cannot
+ * ship without pt-BR copy, because `application/error-messages.ts` is
+ * exhaustive over `BarErrorCode`. That is what keeps the disabled control and
+ * the refused mutation from ever drifting into two explanations of one rule.
+ */
+export const CANCELLATION_BLOCK_CODES: Readonly<
+  Record<CancellationBlock, BarErrorCode>
+> = {
+  [CANCELLATION_BLOCK.CONSOLIDATED]: 'consumption-frozen-in-statement',
+  [CANCELLATION_BLOCK.CLOSED_TAB]: 'consumption-tab-closed',
+  [CANCELLATION_BLOCK.SETTLED_PAYMENT]: 'consumption-covered-by-payment',
 }
 
 /**

@@ -6,6 +6,7 @@ import { useInvalidateBar } from '../../application/queries'
 import { useBarRepository } from '../../application/repository-context'
 import { CONSUMER_KIND, type ChargeKind } from '../../domain/constants'
 import type { Consumer } from '../../domain/entities'
+import { BarError } from '../../domain/errors'
 
 export interface LaunchVariables {
   readonly consumer: Consumer
@@ -50,7 +51,16 @@ function ensureTab(repository: BarRepository, variables: LaunchVariables) {
       month: variables.month,
     })
   }
-  if (!variables.activeEventId) throw new Error('Event must be active')
+  // `resolveConsumerTab` already blocks the tap when no event is active, so
+  // this is the stale-pre-flight case. It raises the same coded failure a
+  // backend would return for "open a visitor tab with no active event",
+  // instead of an English sentence thrown for a table to recognise.
+  if (!variables.activeEventId) {
+    throw new BarError(
+      'active-event-required',
+      'An active event is required to open a visitor tab',
+    )
+  }
   return repository.ensureEventTab({
     eventId: variables.activeEventId,
     visitorId: variables.consumer.id,

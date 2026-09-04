@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
+import { expectRejectedBarErrorCode } from '../../../test/bar-error-assertions'
+import type { BarErrorCode } from '../domain/errors'
 import {
   CHARGE_KIND,
   CONSUMER_KIND,
@@ -99,17 +101,25 @@ describe('LocalBarRepository persistence', () => {
   })
 
   it.each([
-    ['malformed JSON', '{bad json'],
-    ['unknown version', JSON.stringify({ version: 2, data: {} })],
-    ['invalid structure', JSON.stringify({ version: 1, data: { consumers: [] } })],
-  ])('throws a recoverable error for %s without overwriting bytes', async (_name, bytes) => {
-    const { repository, storage } = createRepository()
-    storage.values.set('test-bar', bytes)
+    ['malformed JSON', '{bad json', 'stored-data-malformed'],
+    ['unknown version', JSON.stringify({ version: 2, data: {} }), 'stored-data-unsupported-version'],
+    [
+      'invalid structure',
+      JSON.stringify({ version: 1, data: { consumers: [] } }),
+      'stored-data-invalid',
+    ],
+  ] satisfies readonly (readonly [string, string, BarErrorCode])[])(
+    'throws a recoverable error for %s without overwriting bytes',
+    async (_name, bytes, code) => {
+      const { repository, storage } = createRepository()
+      storage.values.set('test-bar', bytes)
 
-    await expect(repository.getSnapshot()).rejects.toBeInstanceOf(BarPersistenceError)
-    expect(storage.values.get('test-bar')).toBe(bytes)
-    expect(storage.writes).toBe(0)
-  })
+      await expect(repository.getSnapshot()).rejects.toBeInstanceOf(BarPersistenceError)
+      await expectRejectedBarErrorCode(repository.getSnapshot(), code)
+      expect(storage.values.get('test-bar')).toBe(bytes)
+      expect(storage.writes).toBe(0)
+    },
+  )
 
   it('resetDemo explicitly replaces invalid storage', async () => {
     const { repository, storage } = createRepository()
@@ -129,7 +139,7 @@ describe('LocalBarRepository persistence', () => {
     storage.values.set('test-bar', bytes)
 
     await expect(repository.getSnapshot()).rejects.toMatchObject({
-      code: 'invalid-data', recoverable: true,
+      code: 'stored-data-invalid', recoverable: true,
     })
     expect(storage.values.get('test-bar')).toBe(bytes)
   })
@@ -141,7 +151,9 @@ describe('LocalBarRepository persistence', () => {
     const bytes = JSON.stringify({ version: 1, data: invalid })
     storage.values.set('test-bar', bytes)
 
-    await expect(repository.getSnapshot()).rejects.toMatchObject({ code: 'invalid-data' })
+    await expect(repository.getSnapshot()).rejects.toMatchObject({
+      code: 'stored-data-invalid',
+    })
     expect(storage.values.get('test-bar')).toBe(bytes)
   })
 
@@ -215,8 +227,10 @@ describe('LocalBarRepository workflows', () => {
     )
     const bytes = storage.values.get('test-bar')
 
-    await expect(repository.ensureMonthlyTab({ memberId: 'member-novo', month: LATER_MONTH }))
-      .rejects.toThrow('Monthly tab month must match the current month')
+    await expectRejectedBarErrorCode(
+      repository.ensureMonthlyTab({ memberId: 'member-novo', month: LATER_MONTH }),
+      'monthly-tab-month-mismatch',
+    )
     expect(storage.values.get('test-bar')).toBe(bytes)
   })
 
@@ -251,10 +265,10 @@ describe('LocalBarRepository workflows', () => {
       status: TAB_STATUS.CLOSED,
       closedAt: DEFAULT_NOW,
     })
-    await expect(repository.createConsumption({
+    await expectRejectedBarErrorCode(repository.createConsumption({
       tabId: tab.id, itemId: 'item-cerveja', quantity: 1,
       chargeKind: CHARGE_KIND.CHARGED, actorId: 'admin',
-    })).rejects.toThrow('Cannot add consumption to a closed tab')
+    }), 'tab-closed')
   })
 
   it.each(['2026-9', '2026/09', '2026-13', 'setembro', '2026-00'])(
@@ -264,21 +278,28 @@ describe('LocalBarRepository workflows', () => {
       await repository.getSnapshot()
       const bytes = storage.values.get('test-bar')
 
-      await expect(repository.ensureMonthlyTab({ memberId: 'member-ana', month }))
-        .rejects.toThrow('Month must use the YYYY-MM format')
+      await expectRejectedBarErrorCode(
+        repository.ensureMonthlyTab({ memberId: 'member-ana', month }),
+        'month-format-invalid',
+      )
       expect(storage.values.get('test-bar')).toBe(bytes)
     },
   )
 
   it.each([
-    ['visitor-rafael', 'a visitor'],
-    ['item-cerveja', 'an unknown consumer'],
-  ])('rejects a monthly tab for %s (%s)', async (memberId) => {
-    const { repository } = createRepository()
+    ['visitor-rafael', 'a visitor', 'consumer-not-active-member'],
+    ['item-cerveja', 'an unknown consumer', 'consumer-not-found'],
+  ] satisfies readonly (readonly [string, string, BarErrorCode])[])(
+    'rejects a monthly tab for %s (%s)',
+    async (memberId, _description, code) => {
+      const { repository } = createRepository()
 
-    await expect(repository.ensureMonthlyTab({ memberId, month: SEED_MONTH }))
-      .rejects.toThrow(/Consumer must be an active member|Member not found/)
-  })
+      await expectRejectedBarErrorCode(
+        repository.ensureMonthlyTab({ memberId, month: SEED_MONTH }),
+        code,
+      )
+    },
+  )
 
   it('rejects a monthly tab for an inactive member', async () => {
     const { repository, storage } = createRepository()
@@ -287,8 +308,10 @@ describe('LocalBarRepository workflows', () => {
     database.consumers[index] = { ...database.consumers[index], active: false }
     storage.values.set('test-bar', JSON.stringify({ version: 1, data: database }))
 
-    await expect(repository.ensureMonthlyTab({ memberId: 'member-celia', month: SEED_MONTH }))
-      .rejects.toThrow('Consumer must be an active member')
+    await expectRejectedBarErrorCode(
+      repository.ensureMonthlyTab({ memberId: 'member-celia', month: SEED_MONTH }),
+      'consumer-not-active-member',
+    )
   })
 
   it('preserves a closed event tab until it is explicitly reopened', async () => {
@@ -312,9 +335,9 @@ describe('LocalBarRepository workflows', () => {
     const bytes = JSON.stringify({ version: 1, data: database })
     storage.values.set('test-bar', bytes)
 
-    await expect(repository.ensureEventTab({
+    await expectRejectedBarErrorCode(repository.ensureEventTab({
       eventId: 'event-encontro', visitorId: 'visitor-rafael',
-    })).rejects.toThrow('Event must be active')
+    }), 'event-not-active')
     expect(storage.values.get('test-bar')).toBe(bytes)
   })
 
@@ -326,14 +349,18 @@ describe('LocalBarRepository workflows', () => {
     const bytes = JSON.stringify({ version: 1, data: database })
     storage.values.set('test-bar', bytes)
 
-    await expect(repository.createConsumption({
+    await expectRejectedBarErrorCode(repository.createConsumption({
       tabId: 'tab-rafael-evento', itemId: 'item-cerveja', quantity: 1,
       chargeKind: CHARGE_KIND.CHARGED, actorId: 'admin',
-    })).rejects.toThrow('Event must be active')
-    await expect(repository.closeVisitorTab('tab-rafael-evento'))
-      .rejects.toThrow('Event must be active')
-    await expect(repository.reopenVisitorTab('tab-rafael-evento'))
-      .rejects.toThrow('Event must be active')
+    }), 'event-not-active')
+    await expectRejectedBarErrorCode(
+      repository.closeVisitorTab('tab-rafael-evento'),
+      'event-not-active',
+    )
+    await expectRejectedBarErrorCode(
+      repository.reopenVisitorTab('tab-rafael-evento'),
+      'event-not-active',
+    )
     expect(storage.values.get('test-bar')).toBe(bytes)
   })
 
@@ -379,9 +406,9 @@ describe('LocalBarRepository workflows', () => {
     const cancelled = await repository.cancelConsumption({
       consumptionId: original.id, actorId: 'admin',
     })
-    await expect(repository.cancelConsumption({
+    await expectRejectedBarErrorCode(repository.cancelConsumption({
       consumptionId: original.id, actorId: 'admin',
-    })).rejects.toThrow('Only active consumption can be cancelled')
+    }), 'consumption-already-cancelled')
 
     expect(cancelled.consumption.status).toBe(CONSUMPTION_STATUS.CANCELLED)
     expect(cancelled.stockMovement?.quantityDelta).toBe(original.quantity)
@@ -503,11 +530,11 @@ describe('LocalBarRepository workflows', () => {
     const bytes = JSON.stringify({ version: 1, data: database })
     storage.values.set('test-bar', bytes)
 
-    await expect(repository.createConsumption({
+    await expectRejectedBarErrorCode(repository.createConsumption({
       tabId: 'tab-ana-mensal', itemId: 'item-porcao',
       quantity: Number.MAX_SAFE_INTEGER + 1,
       chargeKind: CHARGE_KIND.CHARGED, actorId: 'admin',
-    })).rejects.toThrow('Consumption quantity must be a positive safe integer')
+    }), 'consumption-quantity-invalid')
     expect(storage.values.get('test-bar')).toBe(bytes)
   })
 
@@ -521,10 +548,10 @@ describe('LocalBarRepository workflows', () => {
     let bytes = JSON.stringify({ version: 1, data: underflow })
     storage.values.set('test-bar', bytes)
 
-    await expect(repository.createConsumption({
+    await expectRejectedBarErrorCode(repository.createConsumption({
       tabId: 'tab-ana-mensal', itemId: 'item-cerveja', quantity: 1,
       chargeKind: CHARGE_KIND.CHARGED, actorId: 'admin',
-    })).rejects.toThrow('Stock quantity must be a safe integer')
+    }), 'stock-quantity-overflow')
     expect(storage.values.get('test-bar')).toBe(bytes)
 
     const overflow = createDemoDatabase()
@@ -534,9 +561,9 @@ describe('LocalBarRepository workflows', () => {
     bytes = JSON.stringify({ version: 1, data: overflow })
     storage.values.set('test-bar', bytes)
 
-    await expect(repository.cancelConsumption({
+    await expectRejectedBarErrorCode(repository.cancelConsumption({
       consumptionId: 'cons-ana-cerveja', actorId: 'admin',
-    })).rejects.toThrow('Stock quantity must be a safe integer')
+    }), 'stock-quantity-overflow')
     expect(storage.values.get('test-bar')).toBe(bytes)
   })
 
@@ -590,9 +617,9 @@ describe('LocalBarRepository workflows', () => {
     const bytes = storage.values.get('test-bar')
 
     expect(payment.amountCents).toBe(500)
-    await expect(repository.recordPayment({
+    await expectRejectedBarErrorCode(repository.recordPayment({
       target: PAYMENT_TARGET.TAB, targetId: tab.id, amountCents: 0, actorId: 'admin',
-    })).rejects.toThrow('Money amounts must use positive safe integer cents')
+    }), 'money-amount-not-positive')
     expect(storage.values.get('test-bar')).toBe(bytes)
   })
 
@@ -601,10 +628,10 @@ describe('LocalBarRepository workflows', () => {
     await repository.getSnapshot()
     const bytes = storage.values.get('test-bar')
 
-    await expect(repository.recordPayment({
+    await expectRejectedBarErrorCode(repository.recordPayment({
       target: PAYMENT_TARGET.TAB, targetId: 'tab-ana-mensal',
       amountCents: 2_100, actorId: 'admin',
-    })).rejects.toThrow('Monthly tab debt must be paid through its member statement')
+    }), 'monthly-tab-payment-not-allowed')
     expect(storage.values.get('test-bar')).toBe(bytes)
   })
 
@@ -613,18 +640,18 @@ describe('LocalBarRepository workflows', () => {
     await repository.getSnapshot()
     const bytes = storage.values.get('test-bar')
 
-    await expect(repository.recordPayment({
+    await expectRejectedBarErrorCode(repository.recordPayment({
       target: PAYMENT_TARGET.TAB, targetId: 'tab-rafael-evento',
       amountCents: 999_999_900, actorId: 'admin',
-    })).rejects.toThrow('Payment cannot exceed the amount due')
-    await expect(repository.recordPayment({
+    }), 'payment-exceeds-balance')
+    await expectRejectedBarErrorCode(repository.recordPayment({
       target: PAYMENT_TARGET.TAB, targetId: 'tab-rafael-evento',
       amountCents: 501, actorId: 'admin',
-    })).rejects.toThrow('Payment cannot exceed the amount due')
-    await expect(repository.recordPayment({
+    }), 'payment-exceeds-balance')
+    await expectRejectedBarErrorCode(repository.recordPayment({
       target: PAYMENT_TARGET.TAB, targetId: 'tab-juliana-evento',
       amountCents: 1, actorId: 'admin',
-    })).rejects.toThrow('Payment cannot exceed the amount due')
+    }), 'payment-exceeds-balance')
     expect(storage.values.get('test-bar')).toBe(bytes)
 
     const settlement = await repository.recordPayment({
@@ -633,23 +660,23 @@ describe('LocalBarRepository workflows', () => {
     })
 
     expect(settlement.amountCents).toBe(500)
-    await expect(repository.recordPayment({
+    await expectRejectedBarErrorCode(repository.recordPayment({
       target: PAYMENT_TARGET.TAB, targetId: 'tab-rafael-evento',
       amountCents: 1, actorId: 'admin',
-    })).rejects.toThrow('Payment cannot exceed the amount due')
+    }), 'payment-exceeds-balance')
   })
 
   it('rejects a payment aimed at a target that does not exist', async () => {
     const { repository } = createRepository()
 
-    await expect(repository.recordPayment({
+    await expectRejectedBarErrorCode(repository.recordPayment({
       target: PAYMENT_TARGET.TAB, targetId: 'missing-tab',
       amountCents: 100, actorId: 'admin',
-    })).rejects.toThrow('Payment target not found')
-    await expect(repository.recordPayment({
+    }), 'payment-target-not-found')
+    await expectRejectedBarErrorCode(repository.recordPayment({
       target: PAYMENT_TARGET.STATEMENT, targetId: 'missing-statement',
       amountCents: 100, actorId: 'admin',
-    })).rejects.toThrow('Payment target not found')
+    }), 'payment-target-not-found')
   })
 
   it('caps a statement payment at the outstanding balance', async () => {
@@ -659,10 +686,10 @@ describe('LocalBarRepository workflows', () => {
     })
     const statement = statements.find(({ memberId }) => memberId === 'member-ana')!
 
-    await expect(repository.recordPayment({
+    await expectRejectedBarErrorCode(repository.recordPayment({
       target: PAYMENT_TARGET.STATEMENT, targetId: statement.id,
       amountCents: 2_101, actorId: 'admin',
-    })).rejects.toThrow('Payment cannot exceed the amount due')
+    }), 'payment-exceeds-balance')
     const settlement = await repository.recordPayment({
       target: PAYMENT_TARGET.STATEMENT, targetId: statement.id,
       amountCents: 2_100, actorId: 'admin',
@@ -678,8 +705,10 @@ describe('LocalBarRepository workflows', () => {
 
     expect(result.closing.month).toBe(SEED_MONTH)
     expect(result.statements.length).toBeGreaterThan(0)
-    await expect(repository.createMonthlyClosing({ month: SEED_MONTH, actorId: 'admin' }))
-      .rejects.toThrow('Monthly closing already exists')
+    await expectRejectedBarErrorCode(
+      repository.createMonthlyClosing({ month: SEED_MONTH, actorId: 'admin' }),
+      'monthly-closing-already-exists',
+    )
     expect(storage.values.get('test-bar')).toBe(bytes)
   })
 
@@ -696,10 +725,10 @@ describe('LocalBarRepository workflows', () => {
         { id: 'tab-bruno-mensal', status: TAB_STATUS.CLOSED, closedAt: DEFAULT_NOW },
         { id: 'tab-celia-mensal', status: TAB_STATUS.CLOSED, closedAt: DEFAULT_NOW },
       ])
-    await expect(repository.createConsumption({
+    await expectRejectedBarErrorCode(repository.createConsumption({
       tabId: 'tab-ana-mensal', itemId: 'item-cerveja', quantity: 1,
       chargeKind: CHARGE_KIND.CHARGED, actorId: 'admin',
-    })).rejects.toThrow('Cannot add consumption to a closed tab')
+    }), 'tab-closed')
   })
 
   it('leaves monthly tabs from other months untouched by a closing', async () => {

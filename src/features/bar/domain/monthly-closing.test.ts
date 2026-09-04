@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
+import { expectBarErrorCode } from '../../../test/bar-error-assertions'
 import { CHARGE_KIND, CONSUMPTION_STATUS } from './constants'
 import type { Consumption } from './entities'
 import { consolidateMonth } from './monthly-closing'
@@ -112,7 +113,7 @@ describe('monthly consolidation', () => {
   })
 
   it('rejects a month outside YYYY-MM format', () => {
-    expect(() =>
+    expectBarErrorCode(() =>
       consolidateMonth(
         {
           month: '09/2026',
@@ -124,7 +125,6 @@ describe('monthly consolidation', () => {
           nextId: () => 'closing-1',
           now: () => '2026-10-01T12:00:00.000Z',
         },
-      ),
-    ).toThrow('Month must use YYYY-MM format')
+      ), 'month-format-invalid')
   })
 })

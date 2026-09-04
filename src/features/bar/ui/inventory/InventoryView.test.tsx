@@ -7,6 +7,7 @@ import { LOW_STOCK_THRESHOLD } from '../../application/constants'
 import type { AddStockMovementInput, BarRepository } from '../../application/bar-repository'
 import { STOCK_MOVEMENT_KIND } from '../../domain/constants'
 import type { Item, StockMovement } from '../../domain/entities'
+import { BarError } from '../../domain/errors'
 import { createDemoDatabase } from '../../infrastructure/demo-seed'
 import { formatDateTime } from '../../../../shared/format'
 import { createFakeBarRepository } from '../../../../test/fake-bar-repository'
@@ -50,10 +51,10 @@ function createStatefulRepository(
       })),
       addStockMovement: vi.fn(async (input: AddStockMovementInput) => {
         const index = items.findIndex(({ id }) => id === input.itemId)
-        if (index === -1) throw new Error('Item not found')
+        if (index === -1) throw new BarError('item-not-found', 'Item not found')
         const item = items[index]
         if (item.stockQuantity === undefined) {
-          throw new Error('Item does not track stock')
+          throw new BarError('item-stock-not-tracked', 'Item does not track stock')
         }
         const updated = { ...item, stockQuantity: item.stockQuantity + input.quantityDelta }
         items = [...items.slice(0, index), updated, ...items.slice(index + 1)]
@@ -151,7 +152,7 @@ describe('InventoryView', () => {
     const repository = createFakeBarRepository(
       {
         addStockMovement: vi.fn(async () => {
-          throw new Error('Item does not track stock')
+          throw new BarError('item-stock-not-tracked', 'Item does not track stock')
         }),
       },
       { ...createDemoDatabase(), items: [beer] },
