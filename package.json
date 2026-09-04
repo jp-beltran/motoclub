@@ -5,11 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build && npm run typecheck:server",
+    "build:server": "npx esbuild server/main.ts --bundle --platform=node --format=esm --target=node22 --outfile=server/dist/server.mjs",
+    "typecheck:server": "tsc -p server/tsconfig.json",
     "preview": "vite preview",
     "lint": "eslint .",
     "test": "vitest",
     "test:run": "vitest run",
+    "test:server": "vitest run --config server/vitest.config.ts",
     "e2e": "playwright test"
   },
   "dependencies": {
