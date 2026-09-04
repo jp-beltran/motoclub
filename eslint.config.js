@@ -28,4 +28,14 @@ export default tseslint.config(
       ],
     },
   },
+  {
+    // The root block above applies `globals.browser` to every .ts/.tsx
+    // file, but nothing under server/** runs in a browser — it is a plain
+    // Node process (see server/tsconfig.json's DOM-free `lib`). Node
+    // globals here, not browser ones.
+    files: ['server/**/*.ts'],
+    languageOptions: {
+      globals: globals.node,
+    },
+  },
 )
