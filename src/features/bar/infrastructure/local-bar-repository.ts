@@ -32,7 +32,12 @@ import {
   findCancellationBlock,
 } from '../domain/cancellation'
 import { cancelConsumption, recordConsumption } from '../domain/consumption'
-import { BarError, type BarErrorCode, type StoredDataErrorCode } from '../domain/errors'
+import {
+  BarError,
+  isBarError,
+  type BarErrorCode,
+  type StoredDataErrorCode,
+} from '../domain/errors'
 import { summarizeTabConsumptions } from '../domain/financials'
 import { summarizePayments } from '../domain/payments'
 import type {
@@ -720,6 +725,49 @@ function resolvePaymentTargetConsumptions(
   return database.consumptions.filter(({ tabId }) => tabId === tab.id)
 }
 
+/**
+ * The money invariants the domain raises. They say nothing about *whose*
+ * number was refused, because `assertPositiveCents` cannot know: the same
+ * guard protects the amount the operator just typed and every payment already
+ * on disk.
+ */
+const MONEY_INVARIANT_CODES: readonly BarErrorCode[] = [
+  'money-amount-invalid',
+  'money-amount-not-positive',
+  'money-total-overflow',
+  'money-product-overflow',
+]
+
+/**
+ * Runs a money computation over rows the current request did not supply.
+ *
+ * This boundary is the only place that knows the difference, so it is where
+ * the call belongs: a money invariant broken by stored rows is corrupt
+ * persisted data, not a bad request. Reporting it as `money-amount-not-positive`
+ * would tell the operator to retype an amount that is not theirs — and would
+ * tell a server to answer 400 where the truth is 500.
+ */
+function readStoredMoney<Result>(compute: () => Result): Result {
+  try {
+    return compute()
+  } catch (error) {
+    if (isBarError(error) && MONEY_INVARIANT_CODES.includes(error.code)) {
+      throw new BarPersistenceError(
+        'stored-data-invalid',
+        `Stored bar data breaks a money invariant: ${error.message}`,
+      )
+    }
+    throw error
+  }
+}
+
+/**
+ * Every row read here — the other payments settled against the target, the
+ * other consumption on the tab — comes from storage, never from the caller's
+ * input, so any money invariant broken inside is a persistence fault. The
+ * operator's own `amountCents` is checked separately in `recordPayment`,
+ * before this runs, and keeps its input-shaped code.
+ */
 function calculateRemainingCents(
   database: BarDatabase,
   input: RecordPaymentInput,
@@ -728,10 +776,10 @@ function calculateRemainingCents(
   const settledPayments = database.payments.filter(
     ({ target, targetId }) => target === input.target && targetId === input.targetId,
   )
-  return summarizePayments(
+  return readStoredMoney(() => summarizePayments(
     summarizeTabConsumptions(consumptions).totalCents,
     settledPayments,
-  ).remainingCents
+  ).remainingCents)
 }
 
 function assertValidManualMovement(input: AddStockMovementInput): void {

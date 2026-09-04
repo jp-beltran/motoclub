@@ -422,9 +422,9 @@ describe('LocalBarRepository workflows', () => {
     await repository.createMonthlyClosing({ month: SEED_MONTH, actorId: 'admin' })
     const bytes = storage.values.get('test-bar')
 
-    await expect(repository.cancelConsumption({
+    await expectRejectedBarErrorCode(repository.cancelConsumption({
       consumptionId: 'cons-ana-cerveja', actorId: 'admin',
-    })).rejects.toThrow('Consumption is frozen in a member statement')
+    }), 'consumption-frozen-in-statement')
 
     expect(storage.values.get('test-bar')).toBe(bytes)
   })
@@ -434,9 +434,9 @@ describe('LocalBarRepository workflows', () => {
     await repository.closeVisitorTab('tab-rafael-evento')
     const bytes = storage.values.get('test-bar')
 
-    await expect(repository.cancelConsumption({
+    await expectRejectedBarErrorCode(repository.cancelConsumption({
       consumptionId: 'cons-rafael-refri', actorId: 'admin',
-    })).rejects.toThrow('Consumption belongs to a closed tab')
+    }), 'consumption-tab-closed')
 
     expect(storage.values.get('test-bar')).toBe(bytes)
   })
@@ -452,9 +452,9 @@ describe('LocalBarRepository workflows', () => {
     })
     const bytes = storage.values.get('test-bar')
 
-    await expect(repository.cancelConsumption({
+    await expectRejectedBarErrorCode(repository.cancelConsumption({
       consumptionId: 'cons-rafael-refri', actorId: 'admin',
-    })).rejects.toThrow('Consumption is covered by a settled payment')
+    }), 'consumption-covered-by-payment')
 
     expect(storage.values.get('test-bar')).toBe(bytes)
   })
@@ -484,9 +484,9 @@ describe('LocalBarRepository workflows', () => {
     const { repository } = createRepository()
     await repository.createMonthlyClosing({ month: SEED_MONTH, actorId: 'admin' })
 
-    await expect(repository.editConsumptionQuantity({
+    await expectRejectedBarErrorCode(repository.editConsumptionQuantity({
       consumptionId: 'cons-ana-cerveja', quantity: 1, actorId: 'admin',
-    })).rejects.toThrow('Consumption is frozen in a member statement')
+    }), 'consumption-frozen-in-statement')
   })
 
   it('still cancels a line a partial payment does not yet cover', async () => {
@@ -621,6 +621,37 @@ describe('LocalBarRepository workflows', () => {
       target: PAYMENT_TARGET.TAB, targetId: tab.id, amountCents: 0, actorId: 'admin',
     }), 'money-amount-not-positive')
     expect(storage.values.get('test-bar')).toBe(bytes)
+  })
+
+  /**
+   * `assertPositiveCents` guards both the amount the operator typed and every
+   * payment already on disk, and `recordPayment` reaches it both ways in one
+   * mutation. The two must not arrive as the same code: one is a bad request,
+   * the other is corrupt storage, and a server keying status on the code would
+   * answer 400 for a 500.
+   */
+  it('separates a bad payment amount from a corrupt stored payment by code', async () => {
+    const { repository, storage } = createRepository()
+    const database = createDemoDatabase()
+    const tab = database.tabs.find(({ kind }) => kind === TAB_KIND.EVENT)!
+    // Two stored payments that each pass envelope validation (safe, positive)
+    // but overflow safe-integer cents when summed. Nothing the operator types
+    // can fix these rows, and the structural check cannot see the sum.
+    database.payments.push(
+      {
+        id: 'payment-huge-1', target: PAYMENT_TARGET.TAB, targetId: tab.id,
+        amountCents: Number.MAX_SAFE_INTEGER, paidAt: DEFAULT_NOW, actorId: 'admin',
+      },
+      {
+        id: 'payment-huge-2', target: PAYMENT_TARGET.TAB, targetId: tab.id,
+        amountCents: Number.MAX_SAFE_INTEGER, paidAt: DEFAULT_NOW, actorId: 'admin',
+      },
+    )
+    storage.values.set('test-bar', JSON.stringify({ version: 1, data: database }))
+
+    await expectRejectedBarErrorCode(repository.recordPayment({
+      target: PAYMENT_TARGET.TAB, targetId: tab.id, amountCents: 100, actorId: 'admin',
+    }), 'stored-data-invalid')
   })
 
   it('refuses to pay a monthly tab as if it were a visitor tab', async () => {
