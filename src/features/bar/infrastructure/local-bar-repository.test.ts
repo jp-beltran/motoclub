@@ -429,6 +429,39 @@ describe('LocalBarRepository workflows', () => {
     expect(storage.values.get('test-bar')).toBe(bytes)
   })
 
+  /**
+   * `assertCancellable` runs on every cancel and every quantity edit, and
+   * `findCancellationBlock` totals stored payments to decide. No operator
+   * input reaches that sum, so a money invariant broken there is corrupt
+   * storage — the same 500, not the 400 a raw `money-*` code would imply.
+   */
+  it('reports a corrupt stored payment as stored data when cancelling, not as a money fault', async () => {
+    const { repository, storage } = createRepository()
+    const database = createDemoDatabase()
+    // Individually valid (safe, positive), so the envelope check passes; the
+    // structural check cannot see that they overflow when summed.
+    database.payments.push(
+      {
+        id: 'payment-huge-1', target: PAYMENT_TARGET.TAB, targetId: 'tab-rafael-evento',
+        amountCents: Number.MAX_SAFE_INTEGER, paidAt: DEFAULT_NOW, actorId: 'admin',
+      },
+      {
+        id: 'payment-huge-2', target: PAYMENT_TARGET.TAB, targetId: 'tab-rafael-evento',
+        amountCents: Number.MAX_SAFE_INTEGER, paidAt: DEFAULT_NOW, actorId: 'admin',
+      },
+    )
+    storage.values.set('test-bar', JSON.stringify({ version: 1, data: database }))
+
+    await expectRejectedBarErrorCode(repository.cancelConsumption({
+      consumptionId: 'cons-rafael-refri', actorId: 'admin',
+    }), 'stored-data-invalid')
+
+    // The quantity-edit path goes through the same guard.
+    await expectRejectedBarErrorCode(repository.editConsumptionQuantity({
+      consumptionId: 'cons-rafael-refri', quantity: 1, actorId: 'admin',
+    }), 'stored-data-invalid')
+  })
+
   it('refuses to cancel consumption on a closed tab', async () => {
     const { repository, storage } = createRepository()
     await repository.closeVisitorTab('tab-rafael-evento')
