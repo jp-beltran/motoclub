@@ -20,7 +20,11 @@ export function getCurrentMonth(now: Date = new Date()): string {
 }
 
 export function formatMonth(month: string): string {
-  const [year, monthNumber] = month.split('-')
-  const monthIndex = Number(monthNumber) - 1
-  return `${MONTH_NAMES[monthIndex]} de ${year}`
+  const [year] = month.split('-')
+  return `${formatMonthName(month)} de ${year}`
+}
+
+/** Just the month's pt-BR name, for copy that already carries the year. */
+export function formatMonthName(month: string): string {
+  return MONTH_NAMES[Number(month.split('-')[1]) - 1]
 }

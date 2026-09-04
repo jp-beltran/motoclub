@@ -9,7 +9,11 @@ import { LocalBarRepository } from '../../infrastructure/local-bar-repository'
 import { createDemoDatabase } from '../../infrastructure/demo-seed'
 import { CONSUMER_KIND, EVENT_STATUS, TAB_KIND, TAB_STATUS } from '../../domain/constants'
 import { BarError } from '../../domain/errors'
+import { formatMonthName, getCurrentMonth } from '../../../../shared/date'
 import { ComandasView } from './ComandasView'
+
+/** The seed names its active event after the month it is generated in. */
+const ACTIVE_EVENT_NAME = `Encontro de ${formatMonthName(getCurrentMonth())}`
 
 class MemoryStorage implements StorageLike {
   private readonly values = new Map<string, string>()
@@ -29,7 +33,7 @@ function createRealRepository() {
     storage: new MemoryStorage(),
     storageKey: 'test-comandas',
     nextId: () => `id-${++id}`,
-    now: () => '2026-09-19T21:30:00.000Z',
+    now: () => new Date().toISOString(),
   })
 }
 
@@ -37,7 +41,7 @@ describe('ComandasView', () => {
   it('lists event tabs grouped by event, with total and payment status', async () => {
     renderWithBar(<ComandasView />)
 
-    const heading = await screen.findByRole('heading', { name: 'Encontro de setembro' })
+    const heading = await screen.findByRole('heading', { name: ACTIVE_EVENT_NAME })
     const section = heading.closest('section')
     expect(section).not.toBeNull()
 
@@ -63,7 +67,7 @@ describe('ComandasView', () => {
     const user = userEvent.setup()
     renderWithBar(<ComandasView />, { repository })
 
-    const heading = await screen.findByRole('heading', { name: 'Encontro de setembro' })
+    const heading = await screen.findByRole('heading', { name: ACTIVE_EVENT_NAME })
     const section = heading.closest('section') as HTMLElement
     const rafaelCard = within(section).getByText('Rafael Oliveira').closest('div.rounded-lg') as HTMLElement
     const readTotal = () => rafaelCard.querySelector('p.text-lg')?.textContent
@@ -85,7 +89,7 @@ describe('ComandasView', () => {
     const user = userEvent.setup()
     renderWithBar(<ComandasView />, { repository })
 
-    const heading = await screen.findByRole('heading', { name: 'Encontro de setembro' })
+    const heading = await screen.findByRole('heading', { name: ACTIVE_EVENT_NAME })
     const section = heading.closest('section') as HTMLElement
     const rafaelCard = within(section).getByText('Rafael Oliveira').closest('div.rounded-lg') as HTMLElement
 
@@ -109,7 +113,7 @@ describe('ComandasView', () => {
     const user = userEvent.setup()
     renderWithBar(<ComandasView />, { repository })
 
-    const heading = await screen.findByRole('heading', { name: 'Encontro de setembro' })
+    const heading = await screen.findByRole('heading', { name: ACTIVE_EVENT_NAME })
     const section = heading.closest('section') as HTMLElement
     const rafaelCard = within(section).getByText('Rafael Oliveira').closest('div.rounded-lg') as HTMLElement
 
@@ -136,7 +140,7 @@ describe('ComandasView', () => {
     const user = userEvent.setup()
     renderWithBar(<ComandasView />, { repository })
 
-    const heading = await screen.findByRole('heading', { name: 'Encontro de setembro' })
+    const heading = await screen.findByRole('heading', { name: ACTIVE_EVENT_NAME })
     const section = heading.closest('section') as HTMLElement
     const rafaelCard = within(section).getByText('Rafael Oliveira').closest('div.rounded-lg') as HTMLElement
 
@@ -156,7 +160,7 @@ describe('ComandasView', () => {
     const user = userEvent.setup()
     renderWithBar(<ComandasView />, { repository })
 
-    const heading = await screen.findByRole('heading', { name: 'Encontro de setembro' })
+    const heading = await screen.findByRole('heading', { name: ACTIVE_EVENT_NAME })
     const section = heading.closest('section') as HTMLElement
     const rafaelCard = within(section).getByText('Rafael Oliveira').closest('div.rounded-lg') as HTMLElement
 

@@ -8,8 +8,13 @@ import {
   PAYMENT_STATUS,
   PAYMENT_TARGET,
 } from '../../domain/constants'
-import type { Consumption, MemberStatement } from '../../domain/entities'
-import { buildMonthPreview, summarizeClosedStatement } from './closing-selectors'
+import type { Consumption, MemberStatement, Tab } from '../../domain/entities'
+import { TAB_KIND, TAB_STATUS } from '../../domain/constants'
+import {
+  buildMonthPreview,
+  listClosingMonths,
+  summarizeClosedStatement,
+} from './closing-selectors'
 
 const MONTH = '2026-09'
 
@@ -41,7 +46,7 @@ function emptyDatabase(): BarDatabase {
 
 function consumption(overrides: Partial<Consumption> & { readonly id: string }): Consumption {
   return {
-    tabId: 'tab-ana-2026-09',
+    tabId: 'tab-ana-mensal',
     consumerId: 'member-ana',
     itemId: 'item-cerveja',
     status: CONSUMPTION_STATUS.ACTIVE,
@@ -231,7 +236,7 @@ describe('summarizeClosedStatement', () => {
     const database = statementDatabase()
     database.payments = [
       {
-        id: 'payment-1', target: PAYMENT_TARGET.TAB, targetId: 'tab-ana-2026-09',
+        id: 'payment-1', target: PAYMENT_TARGET.TAB, targetId: 'tab-ana-mensal',
         amountCents: 500, paidAt: '2026-10-02T12:00:00.000Z', actorId: 'admin-demo',
       },
       {
@@ -271,5 +276,84 @@ describe('summarizeClosedStatement', () => {
     database.consumers = []
 
     expect(summarizeClosedStatement(database, statement)).toBeUndefined()
+  })
+})
+
+describe('listClosingMonths', () => {
+  const ANA = { id: 'member-ana', name: 'Ana Paula', kind: CONSUMER_KIND.MEMBER, active: true }
+  const RAFAEL = {
+    id: 'visitor-rafael', name: 'Rafael Oliveira', kind: CONSUMER_KIND.VISITOR, active: true,
+  }
+
+  function monthlyTabFor(month: string): Tab {
+    return {
+      id: `tab-ana-${month}`, kind: TAB_KIND.MONTHLY, status: TAB_STATUS.OPEN,
+      memberId: ANA.id, month, openedAt: localIso(Number(month.slice(0, 4)), 0, 1),
+    }
+  }
+
+  it('always offers the current month, even with nothing in it yet', () => {
+    expect(listClosingMonths(emptyDatabase(), '2026-10')).toEqual([
+      { month: '2026-10', isClosed: false },
+    ])
+  })
+
+  it('offers an earlier month that still has member consumption nobody closed', () => {
+    const snapshot = emptyDatabase()
+    snapshot.consumers = [ANA]
+    snapshot.tabs = [monthlyTabFor('2026-09')]
+    snapshot.consumptions = [
+      consumption({ id: 'c1', tabId: 'tab-ana-mensal', createdAt: SEPTEMBER_INSTANT }),
+    ]
+
+    expect(listClosingMonths(snapshot, '2026-10')).toEqual([
+      { month: '2026-10', isClosed: false },
+      { month: '2026-09', isClosed: false },
+    ])
+  })
+
+  it('keeps a month that was already closed reachable, marked as closed', () => {
+    const snapshot = emptyDatabase()
+    snapshot.consumers = [ANA]
+    snapshot.monthlyClosings = [{
+      id: 'closing-1', month: '2026-09', statementIds: [],
+      closedAt: localIso(2026, 9, 1), actorId: 'admin-demo',
+    }]
+
+    expect(listClosingMonths(snapshot, '2026-10')).toEqual([
+      { month: '2026-10', isClosed: false },
+      { month: '2026-09', isClosed: true },
+    ])
+  })
+
+  it('ignores a month where only visitors consumed — a closing there produces nothing', () => {
+    const snapshot = emptyDatabase()
+    snapshot.consumers = [RAFAEL]
+    snapshot.tabs = [{
+      id: 'tab-visitor', kind: TAB_KIND.EVENT, status: TAB_STATUS.OPEN,
+      eventId: 'event-1', visitorId: RAFAEL.id, openedAt: SEPTEMBER_INSTANT,
+    }]
+    snapshot.consumptions = [
+      consumption({ id: 'c1', consumerId: RAFAEL.id, tabId: 'tab-visitor', createdAt: SEPTEMBER_INSTANT }),
+    ]
+
+    expect(listClosingMonths(snapshot, '2026-10')).toEqual([
+      { month: '2026-10', isClosed: false },
+    ])
+  })
+
+  it('lists the newest month first and never repeats one', () => {
+    const snapshot = emptyDatabase()
+    snapshot.consumers = [ANA]
+    snapshot.tabs = [monthlyTabFor('2026-08'), monthlyTabFor('2026-09')]
+    snapshot.consumptions = [
+      consumption({ id: 'c1', tabId: 'tab-ana-2026-08', createdAt: AUGUST_INSTANT }),
+      consumption({ id: 'c2', tabId: 'tab-ana-mensal', createdAt: SEPTEMBER_INSTANT }),
+      consumption({ id: 'c3', tabId: 'tab-ana-mensal', createdAt: localIso(2026, 8, 15) }),
+    ]
+
+    expect(listClosingMonths(snapshot, MONTH).map(({ month }) => month)).toEqual([
+      '2026-09', '2026-08',
+    ])
   })
 })

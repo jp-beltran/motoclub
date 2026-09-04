@@ -1,10 +1,15 @@
 import { describe, expect, it } from 'vitest'
 
+import {
+  CANCELLATION_BLOCK,
+  CANCELLATION_BLOCK_CODES,
+} from '../domain/cancellation'
 import { BarError, type BarErrorCode } from '../domain/errors'
 import {
   BAR_ERROR_FALLBACKS,
   BAR_ERROR_MESSAGES,
   describeBarError,
+  describeCancellationBlock,
 } from './error-messages'
 
 /**
@@ -36,6 +41,9 @@ const EVERY_CODE: Record<BarErrorCode, true> = {
   'consumption-not-reassignable': true,
   'consumption-item-mismatch': true,
   'reassign-target-tab-invalid': true,
+  'consumption-frozen-in-statement': true,
+  'consumption-tab-closed': true,
+  'consumption-covered-by-payment': true,
   'item-stock-not-tracked': true,
   'stock-movement-quantity-invalid': true,
   'stock-entry-quantity-invalid': true,
@@ -161,6 +169,23 @@ describe('describeBarError', () => {
     },
   )
 
+  it.each([
+    [
+      'consumption-frozen-in-statement',
+      'Este lançamento já foi consolidado no extrato mensal e não pode mais ser cancelado.',
+    ],
+    [
+      'consumption-tab-closed',
+      'Esta comanda está fechada e o lançamento não pode mais ser cancelado.',
+    ],
+    ['consumption-covered-by-payment', 'Já existe pagamento registrado que cobre este lançamento.'],
+  ] satisfies readonly (readonly [BarErrorCode, string])[])(
+    'translates %s, the cancellation the repository refuses',
+    (code, expected) => {
+      expect(describeBarError(new BarError(code, 'developer detail'))).toBe(expected)
+    },
+  )
+
   it('translates a month already closed for the closing surface', () => {
     expect(
       describeBarError(new BarError('monthly-closing-already-exists', 'developer detail')),
@@ -236,5 +261,31 @@ describe('BAR_ERROR_FALLBACKS', () => {
       expect(fallback).toContain('Não foi possível')
       expect(fallback).toContain('novamente.')
     })
+  })
+})
+
+describe('describeCancellationBlock', () => {
+  it('gives every block the same pt-BR sentence its refused mutation maps to', () => {
+    // The disabled control and the rejected call resolve through the same
+    // code into the same table entry, so they cannot drift apart.
+    Object.values(CANCELLATION_BLOCK).forEach((block) => {
+      expect(describeCancellationBlock(block)).toBe(
+        describeBarError(new BarError(CANCELLATION_BLOCK_CODES[block], 'developer detail')),
+      )
+    })
+  })
+
+  it('never falls back, so a blocked control always states its reason', () => {
+    Object.values(CANCELLATION_BLOCK).forEach((block) => {
+      expect(describeCancellationBlock(block)).not.toBe(BAR_ERROR_FALLBACKS.operation)
+    })
+  })
+
+  it('gives every block its own code, so no two blocks share an explanation', () => {
+    const codes = Object.values(CANCELLATION_BLOCK).map(
+      (block) => CANCELLATION_BLOCK_CODES[block],
+    )
+
+    expect(new Set(codes).size).toBe(codes.length)
   })
 })

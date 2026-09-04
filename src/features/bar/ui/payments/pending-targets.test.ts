@@ -38,17 +38,17 @@ function baseDatabase(): BarDatabase {
     ],
     items: [{ id: 'item-cerveja', name: 'Cerveja lata', unitCostCents: 350, unitPriceCents: 700 }],
     events: [
-      { id: 'event-setembro', name: 'Encontro de setembro', startsAt: '2026-09-19T18:00:00.000Z' },
+      { id: 'event-encontro', name: 'Encontro de setembro', startsAt: '2026-09-19T18:00:00.000Z' },
     ],
     tabs: [
       {
         id: 'tab-rafael', kind: TAB_KIND.EVENT, status: TAB_STATUS.OPEN,
-        eventId: 'event-setembro', visitorId: 'visitor-rafael',
+        eventId: 'event-encontro', visitorId: 'visitor-rafael',
         openedAt: '2026-09-19T18:20:00.000Z',
       },
       {
         id: 'tab-juliana', kind: TAB_KIND.EVENT, status: TAB_STATUS.OPEN,
-        eventId: 'event-setembro', visitorId: 'visitor-juliana',
+        eventId: 'event-encontro', visitorId: 'visitor-juliana',
         openedAt: '2026-09-19T18:10:00.000Z',
       },
     ],
@@ -97,7 +97,7 @@ describe('listPendingTargets', () => {
     const statement: MemberStatement = {
       id: 'statement-ana-2026-09', memberId: 'member-ana', month: '2026-09',
       consumptions: [
-        consumption({ id: 'c-ana', tabId: 'tab-ana-2026-09', consumerId: 'member-ana', quantity: 3 }),
+        consumption({ id: 'c-ana', tabId: 'tab-ana-mensal', consumerId: 'member-ana', quantity: 3 }),
       ],
       createdAt: '2026-10-01T00:00:00.000Z',
     }
@@ -117,7 +117,7 @@ describe('listPendingTargets', () => {
     const statement: MemberStatement = {
       id: 'statement-ana-2026-09', memberId: 'member-ana', month: '2026-09',
       consumptions: [
-        consumption({ id: 'c-ana', tabId: 'tab-ana-2026-09', consumerId: 'member-ana', quantity: 3 }),
+        consumption({ id: 'c-ana', tabId: 'tab-ana-mensal', consumerId: 'member-ana', quantity: 3 }),
       ],
       createdAt: '2026-10-01T00:00:00.000Z',
     }
@@ -151,7 +151,7 @@ describe('listPendingTargets', () => {
     })
     database.tabs.push({
       id: 'tab-carlos', kind: TAB_KIND.EVENT, status: TAB_STATUS.CLOSED,
-      eventId: 'event-setembro', visitorId: 'visitor-carlos',
+      eventId: 'event-encontro', visitorId: 'visitor-carlos',
       openedAt: '2026-09-19T18:30:00.000Z', closedAt: '2026-09-19T22:00:00.000Z',
     })
     database.consumptions.push(

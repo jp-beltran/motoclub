@@ -6,6 +6,7 @@ import { MemoryRouter } from 'react-router-dom'
 
 import type { BarRepository } from '../features/bar/application/bar-repository'
 import { BarRepositoryProvider } from '../features/bar/application/repository-context'
+import { formatMonth, getCurrentMonth } from '../shared/date'
 import { createFakeBarRepository } from '../test/fake-bar-repository'
 import { DashboardPage } from './DashboardPage'
 
@@ -29,7 +30,7 @@ describe('DashboardPage', () => {
     render(<DashboardPage />, { wrapper: createWrapper(repository) })
 
     expect(screen.getByRole('heading', { name: 'Painel' })).toBeInTheDocument()
-    expect(screen.getByText('setembro de 2026')).toBeInTheDocument()
+    expect(screen.getByText(formatMonth(getCurrentMonth()))).toBeInTheDocument()
   })
 
   it('renders the six financial indicators computed from the demo snapshot for the current month', async () => {
@@ -50,7 +51,9 @@ describe('DashboardPage', () => {
 
     render(<DashboardPage />, { wrapper: createWrapper(repository) })
 
-    expect(await screen.findByText('5')).toBeInTheDocument()
+    // Ruling 28: the card counts open *event* tabs, matching /comandas —
+    // the seed's two visitor tabs, not its five tabs of every kind.
+    expect(await screen.findByText('2')).toBeInTheDocument()
     expect(screen.getByText('Comandas abertas')).toBeInTheDocument()
     expect(screen.getByText('Nenhum item em estoque crítico')).toBeInTheDocument()
   })

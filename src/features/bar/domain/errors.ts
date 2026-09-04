@@ -51,6 +51,11 @@ export type BarErrorCode =
   | 'consumption-not-reassignable'
   | 'consumption-item-mismatch'
   | 'reassign-target-tab-invalid'
+  // Cancelamento recusado porque o dinheiro do lançamento já foi lido em
+  // outro lugar (ver domain/cancellation.ts).
+  | 'consumption-frozen-in-statement'
+  | 'consumption-tab-closed'
+  | 'consumption-covered-by-payment'
   // Estoque.
   | 'item-stock-not-tracked'
   | 'stock-movement-quantity-invalid'

@@ -1,3 +1,7 @@
+import {
+  CANCELLATION_BLOCK_CODES,
+  type CancellationBlock,
+} from '../domain/cancellation'
 import { isBarError, type BarErrorCode } from '../domain/errors'
 
 /**
@@ -57,6 +61,16 @@ export const BAR_ERROR_MESSAGES: Readonly<Record<BarErrorCode, string>> = {
   'reassign-target-tab-invalid':
     'A comanda de destino precisa estar aberta e ser do mesmo tipo.',
 
+  // Cancelamento recusado porque o dinheiro do lançamento já foi lido em
+  // outro lugar. O painel de correção de `/lancamentos` desabilita o controle
+  // e imprime estas mesmas frases, via `describeCancellationBlock`.
+  'consumption-frozen-in-statement':
+    'Este lançamento já foi consolidado no extrato mensal e não pode mais ser cancelado.',
+  'consumption-tab-closed':
+    'Esta comanda está fechada e o lançamento não pode mais ser cancelado.',
+  'consumption-covered-by-payment':
+    'Já existe pagamento registrado que cobre este lançamento.',
+
   'item-stock-not-tracked': 'Este item não possui controle de estoque.',
   'stock-movement-quantity-invalid': 'Informe uma quantidade válida.',
   'stock-entry-quantity-invalid': 'A quantidade de entrada deve ser maior que zero.',
@@ -109,6 +123,7 @@ export const BAR_ERROR_FALLBACKS = {
   stockMovement: 'Não foi possível registrar a movimentação. Tente novamente.',
   tab: 'Não foi possível atualizar a comanda. Tente novamente.',
   monthlyClosing: 'Não foi possível fechar o mês. Tente novamente.',
+  resetDemo: 'Não foi possível restaurar a demonstração. Tente novamente.',
 } as const satisfies Readonly<Record<string, string>>
 
 /**
@@ -121,4 +136,19 @@ export function describeBarError(
   fallback: string = BAR_ERROR_FALLBACKS.operation,
 ): string {
   return isBarError(error) ? BAR_ERROR_MESSAGES[error.code] : fallback
+}
+
+/**
+ * The same sentence, whether the operator reads it on a control that is
+ * already disabled or on the refusal that would have followed the click.
+ * `/lancamentos` disables the correction actions the repository would refuse
+ * and prints this next to them.
+ *
+ * Both paths resolve through `CANCELLATION_BLOCK_CODES` into the single table
+ * above, so the disabled control and the refused mutation cannot drift into
+ * two different explanations of one rule — and neither can fall back, because
+ * every code in the union has copy.
+ */
+export function describeCancellationBlock(block: CancellationBlock): string {
+  return BAR_ERROR_MESSAGES[CANCELLATION_BLOCK_CODES[block]]
 }

@@ -1,5 +1,16 @@
 import type { Locator, Page } from '@playwright/test'
 
+import { formatMonth, formatMonthName, getCurrentMonth } from '../src/shared/date'
+
+/**
+ * The demo seed derives its whole timeline, and its active event's name,
+ * from the month it is generated in (see demo-seed.ts). These give the
+ * specs the same labels without pinning them to a literal month — five of
+ * them used to fail on the 1st of the next month with no code change.
+ */
+export const CURRENT_MONTH_LABEL = formatMonth(getCurrentMonth())
+export const ACTIVE_EVENT_NAME = `Encontro de ${formatMonthName(getCurrentMonth())}`
+
 /** The single localStorage key LocalBarRepository reads and writes. */
 export const DEMO_DATABASE_KEY = 'motoclub:bar-database'
 

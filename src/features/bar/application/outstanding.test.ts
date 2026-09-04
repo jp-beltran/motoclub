@@ -7,10 +7,11 @@ import {
   PAYMENT_TARGET,
   TAB_KIND,
   TAB_STATUS,
-} from '../../domain/constants'
-import type { Consumption, Item, MemberStatement, Payment, Tab } from '../../domain/entities'
-import type { BarDatabase } from '../../application/bar-repository'
-import { getConsumerOutstandingCents } from './consumer-outstanding'
+} from '../domain/constants'
+import type { Consumption, Item, MemberStatement, Payment, Tab } from '../domain/entities'
+import type { BarDatabase } from './bar-repository'
+import { summarizeDashboard } from './dashboard-summary'
+import { calculateOutstandingCents, getConsumerOutstandingCents } from './outstanding'
 
 const CERVEJA: Item = {
   id: 'item-cerveja', name: 'Cerveja lata', unitCostCents: 350, unitPriceCents: 700,
@@ -21,7 +22,7 @@ const RAFAEL = { id: 'visitor-rafael', name: 'Rafael Oliveira', kind: CONSUMER_K
 
 function consumption(overrides: Partial<Consumption> & { readonly id: string }): Consumption {
   return {
-    tabId: 'tab-ana-2026-09',
+    tabId: 'tab-ana-mensal',
     consumerId: ANA.id,
     itemId: CERVEJA.id,
     status: CONSUMPTION_STATUS.ACTIVE,
@@ -51,9 +52,9 @@ function database(overrides: Partial<BarDatabase> = {}): BarDatabase {
 }
 
 describe('getConsumerOutstandingCents', () => {
-  it("sums a member's current month monthly tab total", () => {
+  it("sums a member's open monthly tab total", () => {
     const tab: Tab = {
-      id: 'tab-ana-2026-09', kind: TAB_KIND.MONTHLY, status: TAB_STATUS.OPEN,
+      id: 'tab-ana-mensal', kind: TAB_KIND.MONTHLY, status: TAB_STATUS.OPEN,
       memberId: ANA.id, month: '2026-09', openedAt: '2026-09-01T12:00:00.000Z',
     }
     const snapshot = database({
@@ -61,31 +62,86 @@ describe('getConsumerOutstandingCents', () => {
       consumptions: [consumption({ id: 'c1', quantity: 3 })],
     })
 
-    expect(getConsumerOutstandingCents(snapshot, ANA, '2026-09')).toBe(2100)
+    expect(getConsumerOutstandingCents(snapshot, ANA)).toBe(2100)
   })
 
-  it('returns zero for a member with no monthly tab yet this month', () => {
+  it('returns zero for a member with no monthly tab and no statement at all', () => {
     const snapshot = database({ tabs: [] })
 
-    expect(getConsumerOutstandingCents(snapshot, ANA, '2026-09')).toBe(0)
+    expect(getConsumerOutstandingCents(snapshot, ANA)).toBe(0)
   })
 
-  it("ignores a member's monthly tab from a different month", () => {
+  it("still counts a member's monthly tab from an earlier month nobody closed", () => {
+    // Ruling 27: debt does not expire when the calendar rolls over. This tab
+    // was never turned into a statement, so nothing has billed it yet and the
+    // member owes every cent of it — exactly what the dashboard already says.
     const tab: Tab = {
-      id: 'tab-ana-2026-08', kind: TAB_KIND.MONTHLY, status: TAB_STATUS.CLOSED,
-      memberId: ANA.id, month: '2026-08', openedAt: '2026-08-01T12:00:00.000Z', closedAt: '2026-09-01T00:00:00.000Z',
+      id: 'tab-ana-2026-08', kind: TAB_KIND.MONTHLY, status: TAB_STATUS.OPEN,
+      memberId: ANA.id, month: '2026-08', openedAt: '2026-08-01T12:00:00.000Z',
     }
     const snapshot = database({
       tabs: [tab],
       consumptions: [consumption({ id: 'c1', tabId: tab.id, createdAt: '2026-08-12T20:00:00.000Z' })],
     })
 
-    expect(getConsumerOutstandingCents(snapshot, ANA, '2026-09')).toBe(0)
+    expect(getConsumerOutstandingCents(snapshot, ANA)).toBe(700)
+  })
+
+  it("counts an earlier month's statement that is still unpaid", () => {
+    const statement: MemberStatement = {
+      id: 'statement-ana-2026-08', memberId: ANA.id, month: '2026-08',
+      consumptions: [consumption({ id: 'c1', quantity: 2, createdAt: '2026-08-12T20:00:00.000Z' })],
+      createdAt: '2026-09-01T00:00:00.000Z',
+    }
+    const snapshot = database({ memberStatements: [statement] })
+
+    expect(getConsumerOutstandingCents(snapshot, ANA)).toBe(1400)
+  })
+
+  it("adds up a member's debt across several months at once", () => {
+    const openTab: Tab = {
+      id: 'tab-ana-mensal', kind: TAB_KIND.MONTHLY, status: TAB_STATUS.OPEN,
+      memberId: ANA.id, month: '2026-09', openedAt: '2026-09-01T12:00:00.000Z',
+    }
+    const statement: MemberStatement = {
+      id: 'statement-ana-2026-08', memberId: ANA.id, month: '2026-08',
+      consumptions: [consumption({ id: 'c-old', quantity: 2, createdAt: '2026-08-12T20:00:00.000Z' })],
+      createdAt: '2026-09-01T00:00:00.000Z',
+    }
+    const snapshot = database({
+      tabs: [openTab],
+      consumptions: [consumption({ id: 'c-new', quantity: 3 })],
+      memberStatements: [statement],
+    })
+
+    // R$ 14,00 frozen in August plus R$ 21,00 still accruing in September.
+    expect(getConsumerOutstandingCents(snapshot, ANA)).toBe(3500)
+  })
+
+  it('never counts a monthly tab a statement already billed twice', () => {
+    const closedTab: Tab = {
+      id: 'tab-ana-2026-08', kind: TAB_KIND.MONTHLY, status: TAB_STATUS.CLOSED,
+      memberId: ANA.id, month: '2026-08', openedAt: '2026-08-01T12:00:00.000Z',
+      closedAt: '2026-09-01T00:00:00.000Z',
+    }
+    const billed = consumption({
+      id: 'c1', tabId: closedTab.id, quantity: 2, createdAt: '2026-08-12T20:00:00.000Z',
+    })
+    const snapshot = database({
+      tabs: [closedTab],
+      consumptions: [billed],
+      memberStatements: [{
+        id: 'statement-ana-2026-08', memberId: ANA.id, month: '2026-08',
+        consumptions: [billed], createdAt: '2026-09-01T00:00:00.000Z',
+      }],
+    })
+
+    expect(getConsumerOutstandingCents(snapshot, ANA)).toBe(1400)
   })
 
   it('excludes cancelled and courtesy consumption from the monthly total', () => {
     const tab: Tab = {
-      id: 'tab-ana-2026-09', kind: TAB_KIND.MONTHLY, status: TAB_STATUS.OPEN,
+      id: 'tab-ana-mensal', kind: TAB_KIND.MONTHLY, status: TAB_STATUS.OPEN,
       memberId: ANA.id, month: '2026-09', openedAt: '2026-09-01T12:00:00.000Z',
     }
     const snapshot = database({
@@ -100,7 +156,7 @@ describe('getConsumerOutstandingCents', () => {
       ],
     })
 
-    expect(getConsumerOutstandingCents(snapshot, ANA, '2026-09')).toBe(700)
+    expect(getConsumerOutstandingCents(snapshot, ANA)).toBe(700)
   })
 
   it(
@@ -108,7 +164,7 @@ describe('getConsumerOutstandingCents', () => {
       'monthly tab, once the month has been closed',
     () => {
       const closedTab: Tab = {
-        id: 'tab-ana-2026-09', kind: TAB_KIND.MONTHLY, status: TAB_STATUS.CLOSED,
+        id: 'tab-ana-mensal', kind: TAB_KIND.MONTHLY, status: TAB_STATUS.CLOSED,
         memberId: ANA.id, month: '2026-09', openedAt: '2026-09-01T12:00:00.000Z',
         closedAt: '2026-10-01T00:00:00.000Z',
       }
@@ -130,7 +186,7 @@ describe('getConsumerOutstandingCents', () => {
         payments: [payment],
       })
 
-      expect(getConsumerOutstandingCents(snapshot, ANA, '2026-09')).toBe(1300)
+      expect(getConsumerOutstandingCents(snapshot, ANA)).toBe(1300)
     },
   )
 
@@ -146,7 +202,7 @@ describe('getConsumerOutstandingCents', () => {
     }
     const snapshot = database({ memberStatements: [statement], payments: [payment] })
 
-    expect(getConsumerOutstandingCents(snapshot, ANA, '2026-09')).toBe(0)
+    expect(getConsumerOutstandingCents(snapshot, ANA)).toBe(0)
   })
 
   it("sums a visitor's open event tabs", () => {
@@ -166,7 +222,7 @@ describe('getConsumerOutstandingCents', () => {
       ],
     })
 
-    expect(getConsumerOutstandingCents(snapshot, RAFAEL, '2026-09')).toBe(2100)
+    expect(getConsumerOutstandingCents(snapshot, RAFAEL)).toBe(2100)
   })
 
   it(
@@ -190,7 +246,7 @@ describe('getConsumerOutstandingCents', () => {
         ],
       })
 
-      expect(getConsumerOutstandingCents(snapshot, RAFAEL, '2026-09')).toBe(7000)
+      expect(getConsumerOutstandingCents(snapshot, RAFAEL)).toBe(7000)
     },
   )
 
@@ -212,7 +268,7 @@ describe('getConsumerOutstandingCents', () => {
       payments: [payment],
     })
 
-    expect(getConsumerOutstandingCents(snapshot, RAFAEL, '2026-09')).toBe(0)
+    expect(getConsumerOutstandingCents(snapshot, RAFAEL)).toBe(0)
   })
 
   it('contributes only the remainder for a closed event tab that was partially paid', () => {
@@ -233,7 +289,7 @@ describe('getConsumerOutstandingCents', () => {
       payments: [payment],
     })
 
-    expect(getConsumerOutstandingCents(snapshot, RAFAEL, '2026-09')).toBe(900)
+    expect(getConsumerOutstandingCents(snapshot, RAFAEL)).toBe(900)
   })
 
   it('contributes its whole total for a closed event tab that was never paid', () => {
@@ -249,7 +305,7 @@ describe('getConsumerOutstandingCents', () => {
       ],
     })
 
-    expect(getConsumerOutstandingCents(snapshot, RAFAEL, '2026-09')).toBe(1400)
+    expect(getConsumerOutstandingCents(snapshot, RAFAEL)).toBe(1400)
   })
 
   it("subtracts payments already made against a visitor's event tab", () => {
@@ -267,6 +323,49 @@ describe('getConsumerOutstandingCents', () => {
       payments: [payment],
     })
 
-    expect(getConsumerOutstandingCents(snapshot, RAFAEL, '2026-09')).toBe(900)
+    expect(getConsumerOutstandingCents(snapshot, RAFAEL)).toBe(900)
+  })
+})
+
+describe('calculateOutstandingCents', () => {
+  it("is exactly the sum of every consumer's own outstanding total", () => {
+    const monthlyTab: Tab = {
+      id: 'tab-ana-2026-08', kind: TAB_KIND.MONTHLY, status: TAB_STATUS.OPEN,
+      memberId: ANA.id, month: '2026-08', openedAt: '2026-08-01T12:00:00.000Z',
+    }
+    const eventTab: Tab = {
+      id: 'tab-rafael-1', kind: TAB_KIND.EVENT, status: TAB_STATUS.OPEN,
+      eventId: 'event-1', visitorId: RAFAEL.id, openedAt: '2026-09-19T18:00:00.000Z',
+    }
+    const snapshot = database({
+      tabs: [monthlyTab, eventTab],
+      consumptions: [
+        consumption({ id: 'c1', tabId: monthlyTab.id, quantity: 3, createdAt: '2026-08-12T20:00:00.000Z' }),
+        consumption({ id: 'c2', tabId: eventTab.id, consumerId: RAFAEL.id, quantity: 2 }),
+      ],
+    })
+
+    expect(calculateOutstandingCents(snapshot)).toBe(
+      getConsumerOutstandingCents(snapshot, ANA) + getConsumerOutstandingCents(snapshot, RAFAEL),
+    )
+    expect(calculateOutstandingCents(snapshot)).toBe(3500)
+  })
+
+  it('is the same number the dashboard reports as pending', () => {
+    // The defect this replaces: a member's August tab nobody closed showed as
+    // R$ 0,00 on /consumidores while the dashboard counted it in "Pendente".
+    const staleTab: Tab = {
+      id: 'tab-ana-2026-08', kind: TAB_KIND.MONTHLY, status: TAB_STATUS.OPEN,
+      memberId: ANA.id, month: '2026-08', openedAt: '2026-08-01T12:00:00.000Z',
+    }
+    const snapshot = database({
+      tabs: [staleTab],
+      consumptions: [
+        consumption({ id: 'c1', tabId: staleTab.id, quantity: 3, createdAt: '2026-08-12T20:00:00.000Z' }),
+      ],
+    })
+
+    expect(getConsumerOutstandingCents(snapshot, ANA)).toBe(2100)
+    expect(summarizeDashboard(snapshot, '2026-09').pendingCents).toBe(2100)
   })
 })

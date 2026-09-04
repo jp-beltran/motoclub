@@ -11,6 +11,8 @@ import {
   TAB_STATUS,
 } from '../domain/constants'
 import type { Consumption, Item, MemberStatement, Payment, Tab } from '../domain/entities'
+import { createDemoDatabase } from '../infrastructure/demo-seed'
+import { getCurrentMonth } from '../../../shared/date'
 
 const MONTH = '2026-09'
 
@@ -456,7 +458,7 @@ describe('summarizeDashboard', () => {
   })
 
   describe('openTabsCount and lowStockItems', () => {
-    it('counts every currently open tab regardless of kind, and flags items at or below the low-stock threshold, excluding untracked items', () => {
+    it('counts only open event tabs — the number /comandas shows — and flags items at or below the low-stock threshold, excluding untracked items', () => {
       const db = emptyDatabase()
       db.tabs = [
         monthlyTab({ id: 'tab-open-monthly', memberId: 'member-1', month: MONTH }),
@@ -481,8 +483,25 @@ describe('summarizeDashboard', () => {
 
       const summary = summarizeDashboard(db, MONTH)
 
-      expect(summary.openTabsCount).toBe(2)
+      // Ruling 28: the card is labelled "Comandas abertas" and links to
+      // /comandas, which lists event tabs only. Counting the open monthly tab
+      // too made the panel say 5 and the linked screen show 2.
+      expect(summary.openTabsCount).toBe(1)
       expect(summary.lowStockItems).toEqual([db.items[0]])
+    })
+
+    it('never counts a monthly tab, which is open all month by its nature', () => {
+      const db = emptyDatabase()
+      db.tabs = [
+        monthlyTab({ id: 'tab-ana', memberId: 'member-1', month: MONTH }),
+        monthlyTab({ id: 'tab-bruno', memberId: 'member-2', month: MONTH }),
+      ]
+
+      expect(summarizeDashboard(db, MONTH).openTabsCount).toBe(0)
+    })
+
+    it('agrees with the demo seed that /comandas has two open visitor tabs', () => {
+      expect(summarizeDashboard(createDemoDatabase(), getCurrentMonth()).openTabsCount).toBe(2)
     })
   })
 })

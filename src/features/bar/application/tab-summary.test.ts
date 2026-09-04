@@ -45,10 +45,10 @@ function database(
       { id: 'visitor-rafael', name: 'Rafael Oliveira', kind: CONSUMER_KIND.VISITOR },
     ],
     items: [CERVEJA, AGUA],
-    events: [{ id: 'event-setembro', name: 'Encontro', startsAt: '2026-09-19T18:00:00.000Z' }],
+    events: [{ id: 'event-encontro', name: 'Encontro', startsAt: '2026-09-19T18:00:00.000Z' }],
     tabs: [{
       id: 'tab-rafael', kind: TAB_KIND.EVENT, status: TAB_STATUS.OPEN,
-      eventId: 'event-setembro', visitorId: 'visitor-rafael',
+      eventId: 'event-encontro', visitorId: 'visitor-rafael',
       openedAt: '2026-09-19T18:10:00.000Z',
     }],
     consumptions: [...consumptions],

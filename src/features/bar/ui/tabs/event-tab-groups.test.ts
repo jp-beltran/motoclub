@@ -41,7 +41,7 @@ function baseDatabase(): BarDatabase {
     items: [{ id: 'item-cerveja', name: 'Cerveja lata', unitCostCents: 350, unitPriceCents: 700 }],
     events: [
       {
-        id: 'event-setembro', name: 'Encontro de setembro',
+        id: 'event-encontro', name: 'Encontro de setembro',
         startsAt: '2026-09-19T18:00:00.000Z', status: EVENT_STATUS.ACTIVE,
       },
       {
@@ -56,16 +56,16 @@ function baseDatabase(): BarDatabase {
     tabs: [
       {
         id: 'tab-rafael', kind: TAB_KIND.EVENT, status: TAB_STATUS.OPEN,
-        eventId: 'event-setembro', visitorId: 'visitor-rafael',
+        eventId: 'event-encontro', visitorId: 'visitor-rafael',
         openedAt: '2026-09-19T18:20:00.000Z',
       },
       {
         id: 'tab-juliana', kind: TAB_KIND.EVENT, status: TAB_STATUS.OPEN,
-        eventId: 'event-setembro', visitorId: 'visitor-juliana',
+        eventId: 'event-encontro', visitorId: 'visitor-juliana',
         openedAt: '2026-09-19T18:10:00.000Z',
       },
       {
-        id: 'tab-ana-2026-09', kind: TAB_KIND.MONTHLY, status: TAB_STATUS.OPEN,
+        id: 'tab-ana-mensal', kind: TAB_KIND.MONTHLY, status: TAB_STATUS.OPEN,
         memberId: 'member-ana', month: '2026-09', openedAt: '2026-09-01T12:00:00.000Z',
       },
       {
@@ -92,7 +92,7 @@ describe('groupEventTabs', () => {
     database.payments = payments
 
     const groups = groupEventTabs(database)
-    const setembroGroup = groups.find((group) => group.event.id === 'event-setembro')
+    const setembroGroup = groups.find((group) => group.event.id === 'event-encontro')
     const rafaelSummary = setembroGroup?.tabs.find((summary) => summary.tab.id === 'tab-rafael')
 
     expect(rafaelSummary?.totalCents).toBe(1400)
@@ -104,7 +104,7 @@ describe('groupEventTabs', () => {
   it('excludes monthly tabs from every group', () => {
     const groups = groupEventTabs(baseDatabase())
     const allTabIds = groups.flatMap((group) => group.tabs.map((summary) => summary.tab.id))
-    expect(allTabIds).not.toContain('tab-ana-2026-09')
+    expect(allTabIds).not.toContain('tab-ana-mensal')
   })
 
   it('excludes events with no event tab at all', () => {
@@ -114,12 +114,12 @@ describe('groupEventTabs', () => {
 
   it('orders events by most recent start first', () => {
     const groups = groupEventTabs(baseDatabase())
-    expect(groups.map((group) => group.event.id)).toEqual(['event-setembro', 'event-aniversario'])
+    expect(groups.map((group) => group.event.id)).toEqual(['event-encontro', 'event-aniversario'])
   })
 
   it('orders tabs within an event by opening time', () => {
     const groups = groupEventTabs(baseDatabase())
-    const setembroGroup = groups.find((group) => group.event.id === 'event-setembro')
+    const setembroGroup = groups.find((group) => group.event.id === 'event-encontro')
     expect(setembroGroup?.tabs.map((summary) => summary.tab.id)).toEqual(['tab-juliana', 'tab-rafael'])
   })
 })

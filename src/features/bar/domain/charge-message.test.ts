@@ -6,7 +6,7 @@ import type { Consumption } from './entities'
 import { getConsumptionLineTotalCents, summarizeTabConsumptions } from './financials'
 
 const BASE_CONSUMPTION = {
-  tabId: 'tab-ana-2026-09',
+  tabId: 'tab-ana-mensal',
   consumerId: 'member-ana',
   status: CONSUMPTION_STATUS.ACTIVE,
   createdAt: '2026-09-12T20:00:00.000Z',

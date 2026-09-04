@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { renderWithBar } from '../../../../test/render-with-bar'
 import { createFakeBarRepository } from '../../../../test/fake-bar-repository'
 import { CURRENT_ACTOR_ID } from '../../application/actor'
+import { getCurrentMonth } from '../../../../shared/date'
 import type { StorageLike } from '../../application/bar-repository'
 import { summarizeTab } from '../../application/tab-summary'
 import { PAYMENT_STATUS, PAYMENT_TARGET } from '../../domain/constants'
@@ -31,7 +32,7 @@ function createRealRepository() {
     storage: new MemoryStorage(),
     storageKey: 'test-pagamentos',
     nextId: () => `id-${++id}`,
-    now: () => '2026-09-19T21:30:00.000Z',
+    now: () => new Date().toISOString(),
   })
 }
 
@@ -114,7 +115,7 @@ describe('PagamentosView', () => {
     const repository = createRealRepository()
     // member-ana has a September consumption (cons-ana-cerveja); closing the
     // month turns it into a real member statement to pay against.
-    await repository.createMonthlyClosing({ month: '2026-09', actorId: CURRENT_ACTOR_ID })
+    await repository.createMonthlyClosing({ month: getCurrentMonth(), actorId: CURRENT_ACTOR_ID })
     const recordPaymentSpy = vi.spyOn(repository, 'recordPayment')
     const user = userEvent.setup()
     renderWithBar(<PagamentosView />, { repository })

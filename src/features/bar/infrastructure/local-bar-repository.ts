@@ -26,6 +26,11 @@ import {
   TAB_KIND,
   TAB_STATUS,
 } from '../domain/constants'
+import {
+  CANCELLATION_BLOCK_CODES,
+  CANCELLATION_BLOCK_REASONS,
+  findCancellationBlock,
+} from '../domain/cancellation'
 import { cancelConsumption, recordConsumption } from '../domain/consumption'
 import { BarError, type BarErrorCode, type StoredDataErrorCode } from '../domain/errors'
 import { summarizeTabConsumptions } from '../domain/financials'
@@ -405,6 +410,7 @@ export class LocalBarRepository implements BarRepository {
       database.consumptions, input.consumptionId, 'consumption-not-found', 'Consumption',
     )
     const consumption = database.consumptions[index]
+    assertCancellable(database, consumption.id)
     const itemIndex = findIndexById(
       database.items, consumption.itemId, 'item-not-found', 'Item',
     )
@@ -669,6 +675,20 @@ function findById<Value extends { readonly id: string }>(
   values: readonly Value[], id: string, code: NotFoundErrorCode, entity: string,
 ): Value {
   return values[findIndexById(values, id, code, entity)]
+}
+
+/**
+ * Cancelling rewrites what a tab owes, so it is refused once that total has
+ * been read somewhere the repository cannot reach back into — a frozen member
+ * statement, a closed tab, or a payment already settled against it. The rule
+ * itself lives in `domain/cancellation.ts`; the launch screen's correction
+ * panel asks it the same question so it never offers an action this refuses.
+ */
+function assertCancellable(database: BarDatabase, consumptionId: string): void {
+  const block = findCancellationBlock(database, consumptionId)
+  if (block) {
+    throw new BarError(CANCELLATION_BLOCK_CODES[block], CANCELLATION_BLOCK_REASONS[block])
+  }
 }
 
 function assertActiveEvent(event: Event): void {

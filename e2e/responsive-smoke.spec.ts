@@ -21,7 +21,7 @@ test('tablet (768x1024): navigation and the tab panel work at md breakpoint', as
   await nav.getByRole('link', { name: 'Lançamentos' }).click()
   await expect(page).toHaveURL(/\/lancamentos$/)
 
-  await page.getByRole('button', { name: 'Bruno Santos' }).click()
+  await page.getByRole('button', { name: /^Bruno Santos/ }).click()
   await page.getByRole('button', { name: 'Lançar Refrigerante' }).click()
   await expect(page.getByRole('status')).toContainText('1× Refrigerante para Bruno Santos')
 
@@ -46,7 +46,7 @@ test('phone (390x844): the hamburger menu and the tab panel work below md', asyn
   await nav.getByRole('link', { name: 'Lançamentos' }).click()
   await expect(page).toHaveURL(/\/lancamentos$/)
 
-  await page.getByRole('button', { name: 'Célia Martins' }).click()
+  await page.getByRole('button', { name: /^Célia Martins/ }).click()
   await page.getByRole('button', { name: 'Lançar Água mineral' }).click()
   await expect(page.getByRole('status')).toContainText('1× Água mineral para Célia Martins')
 

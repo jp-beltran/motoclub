@@ -22,12 +22,53 @@ export interface MemberMonthPreview {
   readonly totalCents: number
 }
 
+export interface ClosingMonthOption {
+  readonly month: string
+  /** A closed month is read-only: its statements are frozen, not previewable. */
+  readonly isClosed: boolean
+}
+
 export interface ClosedMemberStatementView {
   readonly statement: MemberStatement
   readonly consumer: Consumer
   readonly lines: readonly ClosingLine[]
   readonly totalCents: number
   readonly payment: PaymentSummary
+}
+
+/**
+ * Every month `/fechamento` can act on, newest first: the current month
+ * (always, so it can stay the default even before anyone consumes), every
+ * month with member consumption no closing has frozen yet, and every month
+ * already closed.
+ *
+ * Ruling 27(b): pinning the screen to the current month left an unclosed
+ * month permanently unclosable once the calendar rolled over — no statement
+ * could be produced, so /pagamentos (which only lists statements) never
+ * offered the debt — and it also hid the frozen statements and charge
+ * messages of every month that had already been closed.
+ *
+ * Months where only visitors consumed are left out: `consolidateMonth` only
+ * consolidates members, so closing one of those produces nothing at all.
+ */
+export function listClosingMonths(
+  snapshot: BarDatabase,
+  currentMonth: string,
+): readonly ClosingMonthOption[] {
+  const memberIds = new Set(
+    snapshot.consumers
+      .filter((consumer) => consumer.kind === CONSUMER_KIND.MEMBER && consumer.active !== false)
+      .map(({ id }) => id),
+  )
+  const closedMonths = new Set(snapshot.monthlyClosings.map(({ month }) => month))
+  const consumedMonths = snapshot.consumptions
+    .filter((consumption) => memberIds.has(consumption.consumerId))
+    .map((consumption) => getMonthKey(consumption.createdAt))
+
+  return [...new Set([currentMonth, ...consumedMonths, ...closedMonths])]
+    .sort()
+    .reverse()
+    .map((month) => ({ month, isClosed: closedMonths.has(month) }))
 }
 
 /**

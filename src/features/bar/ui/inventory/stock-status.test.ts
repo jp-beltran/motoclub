@@ -37,6 +37,26 @@ describe('describeStockStatus', () => {
     expect(describeStockStatus(makeItem({ stockQuantity: undefined }))).toEqual({
       label: 'Não controlado',
       critical: false,
+      deficit: false,
+    })
+  })
+
+  it('calls a negative balance a deficit needing adjustment, not "crítico"', () => {
+    // Ruling 26: the negative number is the signal that the physical count
+    // needs correcting. Flooring it at zero would erase exactly that, so the
+    // label carries it and names what has to happen.
+    expect(describeStockStatus(makeItem({ stockQuantity: -7 }))).toEqual({
+      label: '-7 (déficit — ajuste o estoque)',
+      critical: true,
+      deficit: true,
+    })
+  })
+
+  it('treats zero as critical rather than as a deficit — nothing is owed', () => {
+    expect(describeStockStatus(makeItem({ stockQuantity: 0 }))).toEqual({
+      label: '0 (estoque crítico)',
+      critical: true,
+      deficit: false,
     })
   })
 
@@ -44,6 +64,7 @@ describe('describeStockStatus', () => {
     expect(describeStockStatus(makeItem({ stockQuantity: LOW_STOCK_THRESHOLD }))).toEqual({
       label: `${LOW_STOCK_THRESHOLD} (estoque crítico)`,
       critical: true,
+      deficit: false,
     })
   })
 
@@ -51,6 +72,7 @@ describe('describeStockStatus', () => {
     expect(describeStockStatus(makeItem({ stockQuantity: LOW_STOCK_THRESHOLD + 10 }))).toEqual({
       label: `${LOW_STOCK_THRESHOLD + 10}`,
       critical: false,
+      deficit: false,
     })
   })
 })

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 
+import { getConsumerOutstandingCents } from '../../application/outstanding'
 import { useBarSnapshot } from '../../application/queries'
-import { getCurrentMonth } from '../../../../shared/date'
 import { Button } from '../../../../shared/ui/Button'
 import { EmptyState } from '../../../../shared/ui/EmptyState'
 import { ConsumerDetail } from './ConsumerDetail'
@@ -9,7 +9,6 @@ import { ConsumerFilters } from './ConsumerFilters'
 import { ConsumerList } from './ConsumerList'
 import { ALL_CONSUMER_KINDS, filterConsumers, type ConsumerKindFilter } from './consumer-filters'
 import { listConsumerHistory } from './consumer-history'
-import { getConsumerOutstandingCents } from './consumer-outstanding'
 import { VisitorQuickForm } from './VisitorQuickForm'
 
 /**
@@ -27,11 +26,10 @@ export function ConsumersView() {
   if (!snapshotQuery.data) return null
 
   const snapshot = snapshotQuery.data
-  const month = getCurrentMonth()
 
   const rows = filterConsumers(snapshot.consumers, { searchTerm, kind }).map((consumer) => ({
     consumer,
-    outstandingCents: getConsumerOutstandingCents(snapshot, consumer, month),
+    outstandingCents: getConsumerOutstandingCents(snapshot, consumer),
   }))
 
   const selectedConsumer = snapshot.consumers.find(
@@ -93,7 +91,7 @@ export function ConsumersView() {
       {selectedConsumer ? (
         <ConsumerDetail
           consumer={selectedConsumer}
-          outstandingCents={getConsumerOutstandingCents(snapshot, selectedConsumer, month)}
+          outstandingCents={getConsumerOutstandingCents(snapshot, selectedConsumer)}
           history={listConsumerHistory(snapshot, selectedConsumer.id)}
           onClose={() => setSelectedConsumerId(undefined)}
         />

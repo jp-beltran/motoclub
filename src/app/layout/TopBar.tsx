@@ -1,5 +1,9 @@
 import { CURRENT_ACTOR_NAME } from '../../features/bar/application/actor'
 import { useResetDemo } from '../../features/bar/application/queries'
+import {
+  BAR_ERROR_FALLBACKS,
+  describeBarError,
+} from '../../features/bar/application/error-messages'
 import { Button } from '../../shared/ui/Button'
 
 const RESET_DEMO_CONFIRM_MESSAGE =
@@ -12,8 +16,15 @@ interface TopBarProps {
 export function TopBar({ activeEventName }: TopBarProps) {
   const resetDemo = useResetDemo()
 
+  /**
+   * Restoring the demo is the app's only way back from broken persisted
+   * state, so a failure has to say so: the button re-enables itself the
+   * moment the mutation settles, and without this the operator would be left
+   * clicking a control that silently does nothing.
+   */
   function handleResetDemo() {
     if (window.confirm(RESET_DEMO_CONFIRM_MESSAGE)) {
+      resetDemo.reset()
       resetDemo.mutate()
     }
   }
@@ -28,13 +39,18 @@ export function TopBar({ activeEventName }: TopBarProps) {
           {activeEventName ?? 'Nenhum evento ativo'}
         </p>
       </div>
-      <div className="flex items-center gap-4">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
         <p className="text-sm text-content-muted">
           Operador: <span className="font-medium text-content-primary">{CURRENT_ACTOR_NAME}</span>
         </p>
         <Button variant="ghost" onClick={handleResetDemo} disabled={resetDemo.isPending}>
           Restaurar demonstração
         </Button>
+        {resetDemo.isError ? (
+          <p role="alert" className="w-full text-right text-sm font-medium text-accent">
+            {describeBarError(resetDemo.error, BAR_ERROR_FALLBACKS.resetDemo)}
+          </p>
+        ) : null}
       </div>
     </header>
   )

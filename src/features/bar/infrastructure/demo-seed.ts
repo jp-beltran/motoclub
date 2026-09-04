@@ -9,8 +9,38 @@ import {
   TAB_STATUS,
 } from '../domain/constants'
 import type { BarDatabase } from '../application/bar-repository'
+import { formatMonthName, getCurrentMonth } from '../../../shared/date'
 
-export function createDemoDatabase(): BarDatabase {
+/**
+ * The demonstration data every fresh browser starts from.
+ *
+ * The narrative is fixed — three members, two of them with consumption
+ * accumulating on a monthly tab; an active event with two visitor tabs, one
+ * of them partially paid and one holding only a courtesy; a past event
+ * already closed behind it — but the whole timeline is derived from `now`.
+ *
+ * Hardcoded September 2026 dates used to empty the demo the moment the month
+ * turned ("Consumo do mês" R$ 0,00, `/fechamento` with nothing to close,
+ * every member at R$ 0,00) and pinned the test suite to a literal month, so
+ * five specs failed on 1 October without a line of code changing.
+ */
+export function createDemoDatabase(now: Date = new Date()): BarDatabase {
+  const month = getCurrentMonth(now)
+  const at = createSeedClock(now)
+
+  const monthOpened = at(MONTH_START, 9)
+  const stockEntry = at(MONTH_START, 10)
+  const pastEventStart = at(14, 18)
+  const pastEventEnd = at(13, 2)
+  const anaConsumption = at(7, 20)
+  const brunoConsumption = at(4, 20)
+  const eventStart = at(1, 18)
+  const rafaelTabOpened = at(1, 18, 10)
+  const julianaTabOpened = at(1, 18, 20)
+  const rafaelConsumption = at(1, 19)
+  const julianaConsumption = at(1, 19, 10)
+  const rafaelPayment = at(1, 21)
+
   return {
     consumers: [
       { id: 'member-ana', name: 'Ana Paula', kind: CONSUMER_KIND.MEMBER, phone: '(11) 98888-1001', active: true },
@@ -28,33 +58,62 @@ export function createDemoDatabase(): BarDatabase {
       { id: 'item-camiseta', code: 'CLB-001', name: 'Camiseta do motoclube', category: 'Clube', unit: 'unidade', active: true, favorite: false, unitCostCents: 3000, unitPriceCents: 5000, stockQuantity: 8 },
     ],
     events: [
-      { id: 'event-setembro', name: 'Encontro de setembro', startsAt: '2026-09-19T18:00:00.000Z', status: EVENT_STATUS.ACTIVE },
-      { id: 'event-aniversario', name: 'Aniversário do motoclube', startsAt: '2026-09-05T18:00:00.000Z', endsAt: '2026-09-06T02:00:00.000Z', status: EVENT_STATUS.CLOSED },
+      { id: 'event-encontro', name: `Encontro de ${formatMonthName(month)}`, startsAt: eventStart, status: EVENT_STATUS.ACTIVE },
+      { id: 'event-aniversario', name: 'Aniversário do motoclube', startsAt: pastEventStart, endsAt: pastEventEnd, status: EVENT_STATUS.CLOSED },
     ],
     tabs: [
-      { id: 'tab-ana-2026-09', kind: TAB_KIND.MONTHLY, status: TAB_STATUS.OPEN, memberId: 'member-ana', month: '2026-09', openedAt: '2026-09-01T12:00:00.000Z' },
-      { id: 'tab-bruno-2026-09', kind: TAB_KIND.MONTHLY, status: TAB_STATUS.OPEN, memberId: 'member-bruno', month: '2026-09', openedAt: '2026-09-01T12:00:00.000Z' },
-      { id: 'tab-celia-2026-09', kind: TAB_KIND.MONTHLY, status: TAB_STATUS.OPEN, memberId: 'member-celia', month: '2026-09', openedAt: '2026-09-01T12:00:00.000Z' },
-      { id: 'tab-rafael-evento', kind: TAB_KIND.EVENT, status: TAB_STATUS.OPEN, eventId: 'event-setembro', visitorId: 'visitor-rafael', openedAt: '2026-09-19T18:10:00.000Z' },
-      { id: 'tab-juliana-evento', kind: TAB_KIND.EVENT, status: TAB_STATUS.OPEN, eventId: 'event-setembro', visitorId: 'visitor-juliana', openedAt: '2026-09-19T18:20:00.000Z' },
+      { id: 'tab-ana-mensal', kind: TAB_KIND.MONTHLY, status: TAB_STATUS.OPEN, memberId: 'member-ana', month, openedAt: monthOpened },
+      { id: 'tab-bruno-mensal', kind: TAB_KIND.MONTHLY, status: TAB_STATUS.OPEN, memberId: 'member-bruno', month, openedAt: monthOpened },
+      { id: 'tab-celia-mensal', kind: TAB_KIND.MONTHLY, status: TAB_STATUS.OPEN, memberId: 'member-celia', month, openedAt: monthOpened },
+      { id: 'tab-rafael-evento', kind: TAB_KIND.EVENT, status: TAB_STATUS.OPEN, eventId: 'event-encontro', visitorId: 'visitor-rafael', openedAt: rafaelTabOpened },
+      { id: 'tab-juliana-evento', kind: TAB_KIND.EVENT, status: TAB_STATUS.OPEN, eventId: 'event-encontro', visitorId: 'visitor-juliana', openedAt: julianaTabOpened },
     ],
     consumptions: [
-      { id: 'cons-ana-cerveja', tabId: 'tab-ana-2026-09', consumerId: 'member-ana', itemId: 'item-cerveja', status: CONSUMPTION_STATUS.ACTIVE, chargeKind: CHARGE_KIND.CHARGED, quantity: 3, unitPriceCents: 700, unitCostCents: 350, createdAt: '2026-09-12T20:00:00.000Z', actorId: 'admin-demo' },
-      { id: 'cons-bruno-espetinho', tabId: 'tab-bruno-2026-09', consumerId: 'member-bruno', itemId: 'item-espetinho', status: CONSUMPTION_STATUS.ACTIVE, chargeKind: CHARGE_KIND.CHARGED, quantity: 2, unitPriceCents: 1200, unitCostCents: 500, createdAt: '2026-09-15T20:00:00.000Z', actorId: 'admin-demo' },
-      { id: 'cons-rafael-refri', tabId: 'tab-rafael-evento', consumerId: 'visitor-rafael', itemId: 'item-refrigerante', status: CONSUMPTION_STATUS.ACTIVE, chargeKind: CHARGE_KIND.CHARGED, quantity: 2, unitPriceCents: 600, unitCostCents: 280, createdAt: '2026-09-19T19:00:00.000Z', actorId: 'admin-demo' },
-      { id: 'cons-juliana-agua', tabId: 'tab-juliana-evento', consumerId: 'visitor-juliana', itemId: 'item-agua', status: CONSUMPTION_STATUS.ACTIVE, chargeKind: CHARGE_KIND.COURTESY, quantity: 1, unitPriceCents: 400, unitCostCents: 150, createdAt: '2026-09-19T19:10:00.000Z', actorId: 'admin-demo' },
+      { id: 'cons-ana-cerveja', tabId: 'tab-ana-mensal', consumerId: 'member-ana', itemId: 'item-cerveja', status: CONSUMPTION_STATUS.ACTIVE, chargeKind: CHARGE_KIND.CHARGED, quantity: 3, unitPriceCents: 700, unitCostCents: 350, createdAt: anaConsumption, actorId: 'admin-demo' },
+      { id: 'cons-bruno-espetinho', tabId: 'tab-bruno-mensal', consumerId: 'member-bruno', itemId: 'item-espetinho', status: CONSUMPTION_STATUS.ACTIVE, chargeKind: CHARGE_KIND.CHARGED, quantity: 2, unitPriceCents: 1200, unitCostCents: 500, createdAt: brunoConsumption, actorId: 'admin-demo' },
+      { id: 'cons-rafael-refri', tabId: 'tab-rafael-evento', consumerId: 'visitor-rafael', itemId: 'item-refrigerante', status: CONSUMPTION_STATUS.ACTIVE, chargeKind: CHARGE_KIND.CHARGED, quantity: 2, unitPriceCents: 600, unitCostCents: 280, createdAt: rafaelConsumption, actorId: 'admin-demo' },
+      { id: 'cons-juliana-agua', tabId: 'tab-juliana-evento', consumerId: 'visitor-juliana', itemId: 'item-agua', status: CONSUMPTION_STATUS.ACTIVE, chargeKind: CHARGE_KIND.COURTESY, quantity: 1, unitPriceCents: 400, unitCostCents: 150, createdAt: julianaConsumption, actorId: 'admin-demo' },
     ],
     payments: [
-      { id: 'payment-rafael', target: PAYMENT_TARGET.TAB, targetId: 'tab-rafael-evento', amountCents: 700, paidAt: '2026-09-19T21:00:00.000Z', actorId: 'admin-demo' },
+      { id: 'payment-rafael', target: PAYMENT_TARGET.TAB, targetId: 'tab-rafael-evento', amountCents: 700, paidAt: rafaelPayment, actorId: 'admin-demo' },
     ],
     stockMovements: [
-      { id: 'movement-entry-cerveja', itemId: 'item-cerveja', kind: STOCK_MOVEMENT_KIND.ENTRY, quantityDelta: 45, occurredAt: '2026-09-01T10:00:00.000Z', actorId: 'admin-demo' },
-      { id: 'movement-ana-cerveja', itemId: 'item-cerveja', kind: STOCK_MOVEMENT_KIND.CONSUMPTION, quantityDelta: -3, occurredAt: '2026-09-12T20:00:00.000Z', actorId: 'admin-demo', consumptionId: 'cons-ana-cerveja' },
-      { id: 'movement-bruno-espetinho', itemId: 'item-espetinho', kind: STOCK_MOVEMENT_KIND.CONSUMPTION, quantityDelta: -2, occurredAt: '2026-09-15T20:00:00.000Z', actorId: 'admin-demo', consumptionId: 'cons-bruno-espetinho' },
-      { id: 'movement-rafael-refri', itemId: 'item-refrigerante', kind: STOCK_MOVEMENT_KIND.CONSUMPTION, quantityDelta: -2, occurredAt: '2026-09-19T19:00:00.000Z', actorId: 'admin-demo', consumptionId: 'cons-rafael-refri' },
-      { id: 'movement-juliana-agua', itemId: 'item-agua', kind: STOCK_MOVEMENT_KIND.CONSUMPTION, quantityDelta: -1, occurredAt: '2026-09-19T19:10:00.000Z', actorId: 'admin-demo', consumptionId: 'cons-juliana-agua' },
+      { id: 'movement-entry-cerveja', itemId: 'item-cerveja', kind: STOCK_MOVEMENT_KIND.ENTRY, quantityDelta: 45, occurredAt: stockEntry, actorId: 'admin-demo' },
+      { id: 'movement-ana-cerveja', itemId: 'item-cerveja', kind: STOCK_MOVEMENT_KIND.CONSUMPTION, quantityDelta: -3, occurredAt: anaConsumption, actorId: 'admin-demo', consumptionId: 'cons-ana-cerveja' },
+      { id: 'movement-bruno-espetinho', itemId: 'item-espetinho', kind: STOCK_MOVEMENT_KIND.CONSUMPTION, quantityDelta: -2, occurredAt: brunoConsumption, actorId: 'admin-demo', consumptionId: 'cons-bruno-espetinho' },
+      { id: 'movement-rafael-refri', itemId: 'item-refrigerante', kind: STOCK_MOVEMENT_KIND.CONSUMPTION, quantityDelta: -2, occurredAt: rafaelConsumption, actorId: 'admin-demo', consumptionId: 'cons-rafael-refri' },
+      { id: 'movement-juliana-agua', itemId: 'item-agua', kind: STOCK_MOVEMENT_KIND.CONSUMPTION, quantityDelta: -1, occurredAt: julianaConsumption, actorId: 'admin-demo', consumptionId: 'cons-juliana-agua' },
     ],
     monthlyClosings: [],
     memberStatements: [],
+  }
+}
+
+/** More days than any month has, so this beat always lands on the 1st. */
+const MONTH_START = 40
+
+/**
+ * Turns "so many days before today, at this hour" into an instant, under two
+ * clamps that keep the demo coherent in any month, on any day of it:
+ *
+ * - the day never falls below the 1st, so every beat stays inside the month
+ *   `/fechamento` and the dashboard scope to (a beat pushed into last month
+ *   would drop straight back out of the demo);
+ * - the instant never passes `now`, so the demo never shows a launch, a
+ *   payment or an event dated in the future.
+ *
+ * Early in a month both clamps bite and the timeline compresses towards the
+ * 1st, which is honest — the month has only just started. Local `Date`
+ * constructors throughout, because `getMonthKey` attributes by local month.
+ */
+function createSeedClock(now: Date): (daysBeforeToday: number, hour: number, minute?: number) => string {
+  const year = now.getFullYear()
+  const monthIndex = now.getMonth()
+  const today = now.getDate()
+
+  return (daysBeforeToday, hour, minute = 0) => {
+    const day = Math.max(1, today - daysBeforeToday)
+    const moment = new Date(year, monthIndex, day, hour, minute, 0, 0)
+    return (moment > now ? now : moment).toISOString()
   }
 }
