@@ -119,15 +119,38 @@ function firstNonEmpty(value: string | undefined): string | undefined {
   return trimmed ? trimmed : undefined
 }
 
+/** Lets a caller that knows a better default (`main.ts`, resolved relative
+ * to the running bundle's own on-disk location — see `defaultStaticDir` in
+ * `main.ts`) supply it, without `config.ts` itself needing to know it is
+ * running bundled. See `loadEnvConfig`'s doc comment for why this matters. */
+export interface LoadConfigDefaults {
+  readonly staticDir?: string
+}
+
 /**
  * Parses and validates every env var in the shared contract. Pure aside
  * from reading `env` and `process.cwd()`/`homedir()` for defaults — no
  * filesystem or database access — so it is exercised directly in tests
  * without touching a real SQLite file.
+ *
+ * `BAR_STATIC_DIR` unset falls back to `defaults.staticDir` when the caller
+ * supplies one, and only then to `process.cwd() + '/dist'`. The `cwd`
+ * fallback depends on the process's working directory matching the
+ * checkout root — true only if whatever starts the process (a systemd
+ * unit's `ExecStart`, a developer's shell) happens to set/be in that
+ * directory. `main.ts` passes a `defaults.staticDir` resolved from its own
+ * bundled file location specifically to remove that dependency in
+ * production; the `cwd`-based fallback stays as the default here so this
+ * function keeps working standalone (as every test above already exercises
+ * it) and for a hypothetical unbundled/dev invocation.
  */
-export function loadEnvConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
+export function loadEnvConfig(
+  env: NodeJS.ProcessEnv = process.env,
+  defaults: LoadConfigDefaults = {},
+): ServerConfig {
   const dbPath = firstNonEmpty(env.BAR_DB_PATH) ?? join(homedir(), '.local/share/motoclub/bar.sqlite3')
-  const staticDir = firstNonEmpty(env.BAR_STATIC_DIR) ?? join(process.cwd(), 'dist')
+  const staticDir =
+    firstNonEmpty(env.BAR_STATIC_DIR) ?? defaults.staticDir ?? join(process.cwd(), 'dist')
   const host = firstNonEmpty(env.BAR_HOST) ?? DEFAULT_HOST
 
   // Structural, not configurable: the "no network" decision does not bend
@@ -185,8 +208,11 @@ export function loadEnvConfig(env: NodeJS.ProcessEnv = process.env): ServerConfi
  * connection (`assertForeignKeysEnabled`, `assertIntegrityOk`) run
  * separately in `main.ts`, once the driver exists.
  */
-export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
+export function loadConfig(
+  env: NodeJS.ProcessEnv = process.env,
+  defaults: LoadConfigDefaults = {},
+): ServerConfig {
   assertSupportedNodeVersion()
   assertTimezone()
-  return loadEnvConfig(env)
+  return loadEnvConfig(env, defaults)
 }

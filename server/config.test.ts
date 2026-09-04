@@ -115,6 +115,24 @@ describe('loadEnvConfig', () => {
     expect(config.staticDir).toMatch(/dist$/)
   })
 
+  it('falls back to process.cwd()-based dist when no BAR_STATIC_DIR and no caller default are given', () => {
+    const config = loadEnvConfig(validEnv)
+    expect(config.staticDir).toBe(`${process.cwd()}/dist`)
+  })
+
+  it('prefers a caller-supplied default staticDir over the cwd-based one', () => {
+    const config = loadEnvConfig(validEnv, { staticDir: '/opt/motoclub/dist' })
+    expect(config.staticDir).toBe('/opt/motoclub/dist')
+  })
+
+  it('BAR_STATIC_DIR still wins over a caller-supplied default', () => {
+    const config = loadEnvConfig(
+      { ...validEnv, BAR_STATIC_DIR: '/explicit/dist' },
+      { staticDir: '/opt/motoclub/dist' },
+    )
+    expect(config.staticDir).toBe('/explicit/dist')
+  })
+
   it('honours explicit overrides', () => {
     const config = loadEnvConfig({
       ...validEnv,
