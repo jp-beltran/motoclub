@@ -390,6 +390,9 @@ export class LocalBarRepository implements BarRepository {
     assertActiveEventTab(database, tab)
     const itemIndex = findIndexById(database.items, input.itemId, 'item-not-found', 'Item')
     const item = database.items[itemIndex]
+    // Deliberately not wrapped in `readStoredMoney`: this multiplies a stored
+    // price by the operator's quantity, so a money overflow here has two
+    // possible causes and is not unambiguously a persistence fault.
     const result = recordConsumption({
       tab, item, quantity: input.quantity, chargeKind: input.chargeKind,
       actorId: input.actorId,
@@ -690,7 +693,11 @@ function findById<Value extends { readonly id: string }>(
  * panel asks it the same question so it never offers an action this refuses.
  */
 function assertCancellable(database: BarDatabase, consumptionId: string): void {
-  const block = findCancellationBlock(database, consumptionId)
+  // `findCancellationBlock` totals the tab's other consumption and every
+  // payment settled against it — stored rows only, no operator input — so it
+  // reaches the same money guards `calculateRemainingCents` does, and gets the
+  // same treatment. See `readStoredMoney`.
+  const block = readStoredMoney(() => findCancellationBlock(database, consumptionId))
   if (block) {
     throw new BarError(CANCELLATION_BLOCK_CODES[block], CANCELLATION_BLOCK_REASONS[block])
   }
