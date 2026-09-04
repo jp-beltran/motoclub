@@ -1,13 +1,12 @@
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { LocalBarRepository } from '../../src/features/bar/infrastructure/local-bar-repository'
 import { openNodeSqliteDriver, type SqlDriver } from './driver'
+import { SCHEMA_SQL } from './schema'
 import { SqliteStorage } from './sqlite-storage'
-
-const SCHEMA_SQL = readFileSync(new URL('./schema.sql', import.meta.url), 'utf8')
 
 let workDir: string | undefined
 
