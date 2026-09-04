@@ -1,0 +1,12 @@
+[Unit]
+Description=Motoclub - backup do banco (VACUUM INTO + integrity_check + poda)
+# Não depende do motoclub.service estar no ar: o backup lê o arquivo
+# .sqlite3 diretamente, e VACUUM INTO funciona com o serviço rodando
+# (WAL permite leitura concorrente).
+
+[Service]
+Type=oneshot
+ExecStart=/opt/node/bin/node --no-warnings %h/motoclub/scripts/backup.mjs
+WorkingDirectory=%h/motoclub
+EnvironmentFile=%h/.config/motoclub/env
+Environment=TZ=America/Sao_Paulo

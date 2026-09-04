@@ -1,0 +1,10 @@
+[Unit]
+Description=Motoclub - dispara o backup diário do banco às 04:00
+
+[Timer]
+OnCalendar=*-*-* 04:00:00
+Persistent=true
+Unit=motoclub-backup.service
+
+[Install]
+WantedBy=timers.target
