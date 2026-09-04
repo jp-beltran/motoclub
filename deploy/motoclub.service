@@ -1,0 +1,23 @@
+[Unit]
+Description=Motoclub - servidor do bar (app + API em localhost)
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/opt/node/bin/node %h/motoclub/server/dist/server.mjs
+WorkingDirectory=%h/motoclub
+EnvironmentFile=%h/.config/motoclub/env
+Environment=TZ=America/Sao_Paulo
+Environment=NODE_ENV=production
+Restart=always
+RestartSec=2
+
+# Endurecimento leve: o processo não precisa de mais que ler o checkout,
+# ler/escrever o banco em ~/.local/share/motoclub e ler os segredos em
+# ~/.config/motoclub. Nada disso restringe rede porque o servidor já
+# liga só em 127.0.0.1 por padrão (BAR_HOST).
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target
