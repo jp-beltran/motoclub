@@ -29,6 +29,13 @@ export type BarErrorCode =
   | 'consumer-not-found'
   | 'event-not-found'
   | 'item-not-found'
+  /**
+   * `reassignConsumption` levanta este mesmo código para a comanda de origem
+   * e para a de destino, então quem consome não sabe qual id estava errado.
+   * Aceitável dentro do processo (a mensagem em inglês diz "Source"/"Target");
+   * atravessando a rede, o endpoint deve devolver o id ofensivo ou dividir o
+   * código — é ele que sabe qual parâmetro recebeu.
+   */
   | 'tab-not-found'
   | 'consumption-not-found'
   | 'payment-target-not-found'
@@ -40,11 +47,24 @@ export type BarErrorCode =
   | 'event-not-active'
   | 'active-event-required'
   // Ciclo de vida das comandas.
+  /**
+   * Recusa de **novo lançamento** numa comanda fechada. Não confundir com
+   * `consumption-tab-closed`, que é a recusa de **cancelar** um lançamento
+   * existente numa comanda fechada: os dois dizem "a comanda está fechada" e
+   * só se distinguem pela operação, que o nome não carrega.
+   */
   | 'tab-closed'
   | 'tab-not-visitor-tab'
   | 'monthly-tab-month-mismatch'
   | 'month-format-invalid'
   // Lançamentos de consumo.
+  /**
+   * Só alcançável chamando o domínio direto. `LocalBarRepository.recordConsumption`
+   * pré-checa inteiro-seguro-e-positivo e levanta `consumption-quantity-invalid`
+   * antes de delegar, então tudo que passa pela primeira checagem passa por
+   * `assertPositiveIntegerQuantity` também. Um mapa de status exaustivo do
+   * servidor não precisa de linha para este código: nenhum endpoint o emite.
+   */
   | 'quantity-invalid'
   | 'consumption-quantity-invalid'
   | 'consumption-already-cancelled'
@@ -54,6 +74,7 @@ export type BarErrorCode =
   // Cancelamento recusado porque o dinheiro do lançamento já foi lido em
   // outro lugar (ver domain/cancellation.ts).
   | 'consumption-frozen-in-statement'
+  /** Recusa de **cancelamento**; ver a nota em `tab-closed`. */
   | 'consumption-tab-closed'
   | 'consumption-covered-by-payment'
   // Estoque.
