@@ -26,7 +26,10 @@ export function LaunchFeedback({
     <div className="flex flex-col gap-2">
       <div
         role={isError ? 'alert' : 'status'}
-        aria-live="polite"
+        // role="alert" is implicitly assertive: pinning aria-live="polite" on
+        // it too would hand assistive technology two contradictory
+        // instructions about the same region.
+        aria-live={isError ? undefined : 'polite'}
         className={`flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3 ${
           isError ? 'border-accent bg-surface-raised' : 'border-positive bg-surface-raised'
         }`}

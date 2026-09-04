@@ -11,7 +11,7 @@ const CERVEJA: Item = {
 
 function consumption(overrides: Partial<Consumption> & { readonly id: string }): Consumption {
   return {
-    tabId: 'tab-ana-2026-09',
+    tabId: 'tab-ana-mensal',
     consumerId: 'member-ana',
     itemId: CERVEJA.id,
     status: CONSUMPTION_STATUS.ACTIVE,

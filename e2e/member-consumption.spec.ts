@@ -18,7 +18,7 @@ test('registers two consumptions for an existing member and updates tab and stoc
 
   // Click 1: pick the consumer. Água mineral has no prior consumption for
   // Ana Paula in the seed, so its tab line and stock delta are unambiguous.
-  await page.getByRole('button', { name: 'Ana Paula' }).click()
+  await page.getByRole('button', { name: /^Ana Paula/ }).click()
   await expect(
     page.getByRole('heading', { level: 2, name: 'O que foi consumido?' }),
   ).toBeVisible()

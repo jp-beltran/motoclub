@@ -142,7 +142,9 @@ export function InventoryView() {
           </label>
           {kind === STOCK_MOVEMENT_KIND.ADJUSTMENT && (
             <p className="text-xs text-content-muted">
-              Use um valor negativo para reduzir o estoque.
+              Use um valor negativo para reduzir o estoque. Se o saldo ficar negativo, o item
+              fica marcado como déficit até um novo ajuste acertar a contagem — nada é
+              zerado automaticamente.
             </p>
           )}
 

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-import { LOW_STOCK_THRESHOLD } from '../../application/constants'
+import { isLowStock, isStockDeficit } from '../../application/stock-levels'
 import { CHARGE_KIND, type ChargeKind } from '../../domain/constants'
 import type { Item } from '../../domain/entities'
 import { formatCents, formatQuantity } from '../../../../shared/format'
@@ -94,15 +94,29 @@ export function ItemCard({ item, onLaunch }: ItemCardProps) {
   )
 }
 
+/**
+ * The stock level of the item about to be sold. Both predicates come from
+ * `application/stock-levels.ts`, shared with `/estoque` and the dashboard,
+ * because this card's own inline `<` used to leave an item sitting exactly
+ * on the threshold looking neutral here while both of those called it
+ * critical.
+ *
+ * A negative balance is named as a deficit rather than as "baixo": it means
+ * the count itself is wrong, and the launch stays available either way — the
+ * shortage warning must never block the record.
+ */
 function StockHint({ item }: { readonly item: Item }) {
   if (item.stockQuantity === undefined) {
     return <span className="text-xs text-content-muted">Estoque não controlado</span>
   }
-  const isLow = item.stockQuantity < LOW_STOCK_THRESHOLD
+  const deficit = isStockDeficit(item.stockQuantity)
+  const low = !deficit && isLowStock(item.stockQuantity)
+  const tone = deficit ? 'text-accent' : low ? 'text-warning' : 'text-content-muted'
+  const suffix = deficit ? ' · déficit, ajuste o estoque' : low ? ' · estoque baixo' : ''
+
   return (
-    <span className={`text-xs ${isLow ? 'text-warning' : 'text-content-muted'}`}>
-      {`Estoque estimado: ${formatQuantity(item.stockQuantity)}`}
-      {isLow ? ' · estoque baixo' : ''}
+    <span className={`text-xs ${tone}`}>
+      {`Estoque estimado: ${formatQuantity(item.stockQuantity)}${suffix}`}
     </span>
   )
 }

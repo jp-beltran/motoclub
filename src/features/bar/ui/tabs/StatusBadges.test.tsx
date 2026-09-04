@@ -18,13 +18,22 @@ describe('TabStatusBadge', () => {
 
 describe('PaymentStatusBadge', () => {
   it('shows the pt-BR text for each payment status, not color alone', () => {
-    const { rerender } = render(<PaymentStatusBadge status={PAYMENT_STATUS.UNPAID} />)
+    const { rerender } = render(
+      <PaymentStatusBadge status={PAYMENT_STATUS.UNPAID} amountDueCents={1_200} />,
+    )
     expect(screen.getByText('Não pago')).toBeInTheDocument()
 
-    rerender(<PaymentStatusBadge status={PAYMENT_STATUS.PARTIAL} />)
+    rerender(<PaymentStatusBadge status={PAYMENT_STATUS.PARTIAL} amountDueCents={1_200} />)
     expect(screen.getByText('Parcial')).toBeInTheDocument()
 
-    rerender(<PaymentStatusBadge status={PAYMENT_STATUS.PAID} />)
+    rerender(<PaymentStatusBadge status={PAYMENT_STATUS.PAID} amountDueCents={1_200} />)
     expect(screen.getByText('Pago')).toBeInTheDocument()
+  })
+
+  it('shows a neutral label when there is nothing to charge at all', () => {
+    render(<PaymentStatusBadge status={PAYMENT_STATUS.UNPAID} amountDueCents={0} />)
+
+    expect(screen.getByText('Sem valor a cobrar')).toBeInTheDocument()
+    expect(screen.queryByText('Não pago')).not.toBeInTheDocument()
   })
 })

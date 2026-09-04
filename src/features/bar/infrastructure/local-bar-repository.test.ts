@@ -33,7 +33,20 @@ class MemoryStorage implements StorageLike {
   }
 }
 
-const DEFAULT_NOW = '2026-09-20T15:00:00.000Z'
+/**
+ * The demo seed derives its month from the clock, so everything anchored to
+ * it here is derived too: SEED_MONTH is the month the seed populated,
+ * DEFAULT_NOW an instant well inside it, and LATER_MONTH one the seed has no
+ * tab in. Pinning any of these to a literal month made the suite pass only
+ * while today happened to fall in it.
+ */
+const SEED_MONTH = getCurrentMonth()
+const SEED_YEAR = Number(SEED_MONTH.split('-')[0])
+const SEED_MONTH_INDEX = Number(SEED_MONTH.split('-')[1]) - 1
+const DEFAULT_NOW = new Date(SEED_YEAR, SEED_MONTH_INDEX, 20, 15, 0).toISOString()
+const LATER_MONTH_NOW = new Date(SEED_YEAR, SEED_MONTH_INDEX + 1, 4, 15, 0).toISOString()
+const LATER_MONTH = getCurrentMonth(new Date(LATER_MONTH_NOW))
+const EARLIER_MONTH = getCurrentMonth(new Date(SEED_YEAR, SEED_MONTH_INDEX - 1, 1))
 
 const createRepository = (storage = new MemoryStorage(), now = DEFAULT_NOW) => {
   let id = 0
@@ -63,7 +76,7 @@ const seedWithTablessMember = (storage: MemoryStorage) => {
 }
 
 describe('LocalBarRepository persistence', () => {
-  it('initializes missing storage with a realistic versioned September demo', async () => {
+  it('initializes missing storage with a realistic versioned demo of the current month', async () => {
     const { repository, storage } = createRepository()
 
     const snapshot = await repository.getSnapshot()
@@ -168,7 +181,7 @@ describe('LocalBarRepository workflows', () => {
       kind: TAB_KIND.MONTHLY,
       status: TAB_STATUS.OPEN,
       memberId: 'member-novo',
-      month: '2026-09',
+      month: SEED_MONTH,
       openedAt: DEFAULT_NOW,
     })
     expect(await repository.listTabs()).toContainEqual(tab)
@@ -202,26 +215,26 @@ describe('LocalBarRepository workflows', () => {
     )
     const bytes = storage.values.get('test-bar')
 
-    await expect(repository.ensureMonthlyTab({ memberId: 'member-novo', month: '2026-10' }))
+    await expect(repository.ensureMonthlyTab({ memberId: 'member-novo', month: LATER_MONTH }))
       .rejects.toThrow('Monthly tab month must match the current month')
     expect(storage.values.get('test-bar')).toBe(bytes)
   })
 
   it('still returns an existing tab from a month that is already over', async () => {
-    const { repository } = createRepository(new MemoryStorage(), '2026-10-04T15:00:00.000Z')
+    const { repository } = createRepository(new MemoryStorage(), LATER_MONTH_NOW)
 
-    const tab = await repository.ensureMonthlyTab({ memberId: 'member-ana', month: '2026-09' })
+    const tab = await repository.ensureMonthlyTab({ memberId: 'member-ana', month: SEED_MONTH })
 
-    expect(tab.id).toBe('tab-ana-2026-09')
+    expect(tab.id).toBe('tab-ana-mensal')
   })
 
   it('idempotently reuses the monthly tab already open for the month', async () => {
     const { repository } = createRepository()
 
-    const first = await repository.ensureMonthlyTab({ memberId: 'member-ana', month: '2026-09' })
-    const second = await repository.ensureMonthlyTab({ memberId: 'member-ana', month: '2026-09' })
+    const first = await repository.ensureMonthlyTab({ memberId: 'member-ana', month: SEED_MONTH })
+    const second = await repository.ensureMonthlyTab({ memberId: 'member-ana', month: SEED_MONTH })
 
-    expect(first.id).toBe('tab-ana-2026-09')
+    expect(first.id).toBe('tab-ana-mensal')
     expect(second).toEqual(first)
     expect((await repository.listTabs()).filter(({ kind }) => kind === TAB_KIND.MONTHLY))
       .toHaveLength(3)
@@ -229,14 +242,14 @@ describe('LocalBarRepository workflows', () => {
 
   it('returns a closed monthly tab as it is instead of reopening it', async () => {
     const { repository } = createRepository()
-    await repository.createMonthlyClosing({ month: '2026-09', actorId: 'admin' })
+    await repository.createMonthlyClosing({ month: SEED_MONTH, actorId: 'admin' })
 
-    const tab = await repository.ensureMonthlyTab({ memberId: 'member-ana', month: '2026-09' })
+    const tab = await repository.ensureMonthlyTab({ memberId: 'member-ana', month: SEED_MONTH })
 
     expect(tab).toMatchObject({
-      id: 'tab-ana-2026-09',
+      id: 'tab-ana-mensal',
       status: TAB_STATUS.CLOSED,
-      closedAt: '2026-09-20T15:00:00.000Z',
+      closedAt: DEFAULT_NOW,
     })
     await expect(repository.createConsumption({
       tabId: tab.id, itemId: 'item-cerveja', quantity: 1,
@@ -263,7 +276,7 @@ describe('LocalBarRepository workflows', () => {
   ])('rejects a monthly tab for %s (%s)', async (memberId) => {
     const { repository } = createRepository()
 
-    await expect(repository.ensureMonthlyTab({ memberId, month: '2026-09' }))
+    await expect(repository.ensureMonthlyTab({ memberId, month: SEED_MONTH }))
       .rejects.toThrow(/Consumer must be an active member|Member not found/)
   })
 
@@ -274,7 +287,7 @@ describe('LocalBarRepository workflows', () => {
     database.consumers[index] = { ...database.consumers[index], active: false }
     storage.values.set('test-bar', JSON.stringify({ version: 1, data: database }))
 
-    await expect(repository.ensureMonthlyTab({ memberId: 'member-celia', month: '2026-09' }))
+    await expect(repository.ensureMonthlyTab({ memberId: 'member-celia', month: SEED_MONTH }))
       .rejects.toThrow('Consumer must be an active member')
   })
 
@@ -284,7 +297,7 @@ describe('LocalBarRepository workflows', () => {
     await repository.closeVisitorTab(existing.id)
 
     const ensured = await repository.ensureEventTab({
-      eventId: 'event-setembro',
+      eventId: 'event-encontro',
       visitorId: existing.kind === 'event' ? existing.visitorId : '',
     })
 
@@ -300,7 +313,7 @@ describe('LocalBarRepository workflows', () => {
     storage.values.set('test-bar', bytes)
 
     await expect(repository.ensureEventTab({
-      eventId: 'event-setembro', visitorId: 'visitor-rafael',
+      eventId: 'event-encontro', visitorId: 'visitor-rafael',
     })).rejects.toThrow('Event must be active')
     expect(storage.values.get('test-bar')).toBe(bytes)
   })
@@ -308,7 +321,7 @@ describe('LocalBarRepository workflows', () => {
   it('refuses consumption and status changes on a tab of a closed event', async () => {
     const { repository, storage } = createRepository()
     const database = createDemoDatabase()
-    const index = database.events.findIndex(({ id }) => id === 'event-setembro')
+    const index = database.events.findIndex(({ id }) => id === 'event-encontro')
     database.events[index] = { ...database.events[index], status: EVENT_STATUS.CLOSED }
     const bytes = JSON.stringify({ version: 1, data: database })
     storage.values.set('test-bar', bytes)
@@ -377,6 +390,94 @@ describe('LocalBarRepository workflows', () => {
     expect(storage.values.get('test-bar')).not.toBe(beforeBytes)
   })
 
+  it('refuses to cancel consumption a monthly closing already froze', async () => {
+    const { repository, storage } = createRepository()
+    await repository.createMonthlyClosing({ month: SEED_MONTH, actorId: 'admin' })
+    const bytes = storage.values.get('test-bar')
+
+    await expect(repository.cancelConsumption({
+      consumptionId: 'cons-ana-cerveja', actorId: 'admin',
+    })).rejects.toThrow('Consumption is frozen in a member statement')
+
+    expect(storage.values.get('test-bar')).toBe(bytes)
+  })
+
+  it('refuses to cancel consumption on a closed tab', async () => {
+    const { repository, storage } = createRepository()
+    await repository.closeVisitorTab('tab-rafael-evento')
+    const bytes = storage.values.get('test-bar')
+
+    await expect(repository.cancelConsumption({
+      consumptionId: 'cons-rafael-refri', actorId: 'admin',
+    })).rejects.toThrow('Consumption belongs to a closed tab')
+
+    expect(storage.values.get('test-bar')).toBe(bytes)
+  })
+
+  it('refuses a cancellation that would leave the tab overpaid', async () => {
+    const { repository, storage } = createRepository()
+    // Rafael's tab: 2x Refrigerante = R$ 12,00, R$ 7,00 already settled in
+    // the seed. Settle the other R$ 5,00 and the tab is square; cancelling
+    // the line now would strand the whole R$ 12,00 with the club.
+    await repository.recordPayment({
+      target: PAYMENT_TARGET.TAB, targetId: 'tab-rafael-evento',
+      amountCents: 500, actorId: 'admin',
+    })
+    const bytes = storage.values.get('test-bar')
+
+    await expect(repository.cancelConsumption({
+      consumptionId: 'cons-rafael-refri', actorId: 'admin',
+    })).rejects.toThrow('Consumption is covered by a settled payment')
+
+    expect(storage.values.get('test-bar')).toBe(bytes)
+  })
+
+  it('never lets a settled tab saturate into a silent overpayment', async () => {
+    const { repository } = createRepository()
+    await repository.recordPayment({
+      target: PAYMENT_TARGET.TAB, targetId: 'tab-rafael-evento',
+      amountCents: 500, actorId: 'admin',
+    })
+
+    await expect(repository.cancelConsumption({
+      consumptionId: 'cons-rafael-refri', actorId: 'admin',
+    })).rejects.toThrow()
+
+    // The refusal is what keeps the money honest: the tab still owes nothing
+    // and still holds exactly the R$ 12,00 it was paid, with the line intact.
+    const snapshot = await repository.getSnapshot()
+    const line = snapshot.consumptions.find(({ id }) => id === 'cons-rafael-refri')
+    expect(line?.status).toBe(CONSUMPTION_STATUS.ACTIVE)
+    expect(snapshot.payments
+      .filter(({ targetId }) => targetId === 'tab-rafael-evento')
+      .reduce((total, { amountCents }) => total + amountCents, 0)).toBe(1200)
+  })
+
+  it('refuses to edit the quantity of consumption a closing already froze', async () => {
+    const { repository } = createRepository()
+    await repository.createMonthlyClosing({ month: SEED_MONTH, actorId: 'admin' })
+
+    await expect(repository.editConsumptionQuantity({
+      consumptionId: 'cons-ana-cerveja', quantity: 1, actorId: 'admin',
+    })).rejects.toThrow('Consumption is frozen in a member statement')
+  })
+
+  it('still cancels a line a partial payment does not yet cover', async () => {
+    const { repository } = createRepository()
+    // R$ 12,00 due, R$ 7,00 settled in the seed: adding a second line and
+    // cancelling it leaves R$ 12,00 due, still above what was paid.
+    const added = await repository.createConsumption({
+      tabId: 'tab-rafael-evento', itemId: 'item-espetinho', quantity: 1,
+      chargeKind: CHARGE_KIND.CHARGED, actorId: 'admin',
+    })
+
+    const cancelled = await repository.cancelConsumption({
+      consumptionId: added.consumption.id, actorId: 'admin',
+    })
+
+    expect(cancelled.consumption.status).toBe(CONSUMPTION_STATUS.CANCELLED)
+  })
+
   it('leaves bytes unchanged when a mutation fails', async () => {
     const { repository, storage } = createRepository()
     await repository.getSnapshot()
@@ -403,7 +504,7 @@ describe('LocalBarRepository workflows', () => {
     storage.values.set('test-bar', bytes)
 
     await expect(repository.createConsumption({
-      tabId: 'tab-ana-2026-09', itemId: 'item-porcao',
+      tabId: 'tab-ana-mensal', itemId: 'item-porcao',
       quantity: Number.MAX_SAFE_INTEGER + 1,
       chargeKind: CHARGE_KIND.CHARGED, actorId: 'admin',
     })).rejects.toThrow('Consumption quantity must be a positive safe integer')
@@ -421,7 +522,7 @@ describe('LocalBarRepository workflows', () => {
     storage.values.set('test-bar', bytes)
 
     await expect(repository.createConsumption({
-      tabId: 'tab-ana-2026-09', itemId: 'item-cerveja', quantity: 1,
+      tabId: 'tab-ana-mensal', itemId: 'item-cerveja', quantity: 1,
       chargeKind: CHARGE_KIND.CHARGED, actorId: 'admin',
     })).rejects.toThrow('Stock quantity must be a safe integer')
     expect(storage.values.get('test-bar')).toBe(bytes)
@@ -501,7 +602,7 @@ describe('LocalBarRepository workflows', () => {
     const bytes = storage.values.get('test-bar')
 
     await expect(repository.recordPayment({
-      target: PAYMENT_TARGET.TAB, targetId: 'tab-ana-2026-09',
+      target: PAYMENT_TARGET.TAB, targetId: 'tab-ana-mensal',
       amountCents: 2_100, actorId: 'admin',
     })).rejects.toThrow('Monthly tab debt must be paid through its member statement')
     expect(storage.values.get('test-bar')).toBe(bytes)
@@ -554,7 +655,7 @@ describe('LocalBarRepository workflows', () => {
   it('caps a statement payment at the outstanding balance', async () => {
     const { repository } = createRepository()
     const { statements } = await repository.createMonthlyClosing({
-      month: '2026-09', actorId: 'admin',
+      month: SEED_MONTH, actorId: 'admin',
     })
     const statement = statements.find(({ memberId }) => memberId === 'member-ana')!
 
@@ -572,12 +673,12 @@ describe('LocalBarRepository workflows', () => {
 
   it('creates a monthly closing once with member statements', async () => {
     const { repository, storage } = createRepository()
-    const result = await repository.createMonthlyClosing({ month: '2026-09', actorId: 'admin' })
+    const result = await repository.createMonthlyClosing({ month: SEED_MONTH, actorId: 'admin' })
     const bytes = storage.values.get('test-bar')
 
-    expect(result.closing.month).toBe('2026-09')
+    expect(result.closing.month).toBe(SEED_MONTH)
     expect(result.statements.length).toBeGreaterThan(0)
-    await expect(repository.createMonthlyClosing({ month: '2026-09', actorId: 'admin' }))
+    await expect(repository.createMonthlyClosing({ month: SEED_MONTH, actorId: 'admin' }))
       .rejects.toThrow('Monthly closing already exists')
     expect(storage.values.get('test-bar')).toBe(bytes)
   })
@@ -585,18 +686,18 @@ describe('LocalBarRepository workflows', () => {
   it('closes the monthly tabs of the closed month so late consumption is refused', async () => {
     const { repository } = createRepository()
 
-    await repository.createMonthlyClosing({ month: '2026-09', actorId: 'admin' })
+    await repository.createMonthlyClosing({ month: SEED_MONTH, actorId: 'admin' })
     const monthlyTabs = (await repository.listTabs())
       .filter(({ kind }) => kind === TAB_KIND.MONTHLY)
 
     expect(monthlyTabs.map(({ id, status, closedAt }) => ({ id, status, closedAt })))
       .toEqual([
-        { id: 'tab-ana-2026-09', status: TAB_STATUS.CLOSED, closedAt: '2026-09-20T15:00:00.000Z' },
-        { id: 'tab-bruno-2026-09', status: TAB_STATUS.CLOSED, closedAt: '2026-09-20T15:00:00.000Z' },
-        { id: 'tab-celia-2026-09', status: TAB_STATUS.CLOSED, closedAt: '2026-09-20T15:00:00.000Z' },
+        { id: 'tab-ana-mensal', status: TAB_STATUS.CLOSED, closedAt: DEFAULT_NOW },
+        { id: 'tab-bruno-mensal', status: TAB_STATUS.CLOSED, closedAt: DEFAULT_NOW },
+        { id: 'tab-celia-mensal', status: TAB_STATUS.CLOSED, closedAt: DEFAULT_NOW },
       ])
     await expect(repository.createConsumption({
-      tabId: 'tab-ana-2026-09', itemId: 'item-cerveja', quantity: 1,
+      tabId: 'tab-ana-mensal', itemId: 'item-cerveja', quantity: 1,
       chargeKind: CHARGE_KIND.CHARGED, actorId: 'admin',
     })).rejects.toThrow('Cannot add consumption to a closed tab')
   })
@@ -604,15 +705,15 @@ describe('LocalBarRepository workflows', () => {
   it('leaves monthly tabs from other months untouched by a closing', async () => {
     const { repository, storage } = createRepository()
     const database = createDemoDatabase()
-    const index = database.tabs.findIndex(({ id }) => id === 'tab-celia-2026-09')
-    ;(database.tabs[index] as { month: string }).month = '2026-08'
+    const index = database.tabs.findIndex(({ id }) => id === 'tab-celia-mensal')
+    ;(database.tabs[index] as { month: string }).month = EARLIER_MONTH
     storage.values.set('test-bar', JSON.stringify({ version: 1, data: database }))
 
-    await repository.createMonthlyClosing({ month: '2026-09', actorId: 'admin' })
+    await repository.createMonthlyClosing({ month: SEED_MONTH, actorId: 'admin' })
 
     const tabs = await repository.listTabs()
-    expect(tabs.find(({ id }) => id === 'tab-celia-2026-09')!.status).toBe(TAB_STATUS.OPEN)
-    expect(tabs.find(({ id }) => id === 'tab-ana-2026-09')!.status).toBe(TAB_STATUS.CLOSED)
+    expect(tabs.find(({ id }) => id === 'tab-celia-mensal')!.status).toBe(TAB_STATUS.OPEN)
+    expect(tabs.find(({ id }) => id === 'tab-ana-mensal')!.status).toBe(TAB_STATUS.CLOSED)
   })
 
   it.each([

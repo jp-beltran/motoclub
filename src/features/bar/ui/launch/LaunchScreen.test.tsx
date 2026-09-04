@@ -3,30 +3,33 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 
 import { LancamentosPage } from '../../../../pages/LancamentosPage'
-import { getCurrentMonth } from '../../../../shared/date'
 import { renderWithBar } from '../../../../test/render-with-bar'
 import type { BarDatabase, StorageLike } from '../../application/bar-repository'
 import {
   CHARGE_KIND,
   CONSUMPTION_STATUS,
   EVENT_STATUS,
-  TAB_KIND,
+  STOCK_MOVEMENT_KIND,
   TAB_STATUS,
 } from '../../domain/constants'
 import { createDemoDatabase } from '../../infrastructure/demo-seed'
 import { LocalBarRepository } from '../../infrastructure/local-bar-repository'
 
 /**
- * The seed's monthly tabs are stamped 2026-09. Restamping them with the month
- * the screen actually asks for keeps every member assertion true whenever the
- * suite runs, instead of only during September 2026.
+ * The seed with its own consumption stripped out, so the day's correction
+ * panel starts empty and holds only the launch a test makes. Early in a
+ * month the seed's timeline compresses onto the 1st, which is "today" — and
+ * a second "Cancelar Cerveja lata de Ana Paula" row would make the panel's
+ * own queries ambiguous on exactly that day.
  */
-function currentMonthDemo(): BarDatabase {
+function demoWithoutConsumption(): BarDatabase {
   const database = createDemoDatabase()
   return {
     ...database,
-    tabs: database.tabs.map((tab) =>
-      tab.kind === TAB_KIND.MONTHLY ? { ...tab, month: getCurrentMonth() } : tab,
+    consumptions: [],
+    payments: [],
+    stockMovements: database.stockMovements.filter(
+      ({ kind }) => kind === STOCK_MOVEMENT_KIND.ENTRY,
     ),
   }
 }
@@ -35,7 +38,7 @@ function currentMonthDemo(): BarDatabase {
  * The real repository over in-memory storage: these tests have to prove that a
  * tap actually persists a consumption, which a stub could only pretend to do.
  */
-function createRepository(database: BarDatabase = currentMonthDemo()) {
+function createRepository(database: BarDatabase = createDemoDatabase()) {
   const values = new Map<string, string>([
     ['launch-test', JSON.stringify({ version: 1, data: database })],
   ])
@@ -79,7 +82,7 @@ describe('LaunchScreen speed acceptance (global constraint 13)', () => {
     renderWithBar(<LancamentosPage />, { repository, route: '/lancamentos' })
 
     // Click 1 of 2: pick the consumer.
-    await click(await screen.findByRole('button', { name: /Ana Paula/ }))
+    await click(await screen.findByRole('button', { name: /^Ana Paula/ }))
     // Click 2 of 2: tap the item. No confirmation step in between.
     await click(await screen.findByRole('button', { name: 'Lançar Cerveja lata' }))
 
@@ -122,7 +125,7 @@ describe('LaunchScreen speed acceptance (global constraint 13)', () => {
     const { click } = setupCountingUser()
     renderWithBar(<LancamentosPage />, { repository, route: '/lancamentos' })
 
-    await click(await screen.findByRole('button', { name: /Rafael Oliveira/ }))
+    await click(await screen.findByRole('button', { name: /^Rafael Oliveira/ }))
     await click(await screen.findByRole('button', { name: 'Lançar Água mineral' }))
     await waitFor(async () => {
       expect(launchedConsumptions(await repository.getSnapshot())).toHaveLength(1)
@@ -130,7 +133,7 @@ describe('LaunchScreen speed acceptance (global constraint 13)', () => {
 
     expect(screen.getByRole('button', { name: 'Lançar Água mineral' })).toBeInTheDocument()
     expect(screen.getByText('Rafael Oliveira')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /Ana Paula/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Ana Paula/ })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Trocar consumidor' })).toBeInTheDocument()
   })
 })
@@ -141,7 +144,7 @@ describe('LaunchScreen registration feedback', () => {
     const { click } = setupCountingUser()
     renderWithBar(<LancamentosPage />, { repository, route: '/lancamentos' })
 
-    await click(await screen.findByRole('button', { name: /Ana Paula/ }))
+    await click(await screen.findByRole('button', { name: /^Ana Paula/ }))
     await click(await screen.findByRole('button', { name: 'Lançar Cerveja lata' }))
     await waitFor(async () => {
       expect(launchedConsumptions(await repository.getSnapshot())).toHaveLength(1)
@@ -170,7 +173,7 @@ describe('LaunchScreen registration feedback', () => {
   })
 
   it('warns about insufficient stock without blocking the launch', async () => {
-    const database = currentMonthDemo()
+    const database = createDemoDatabase()
     const repository = createRepository({
       ...database,
       items: database.items.map((item) =>
@@ -180,7 +183,7 @@ describe('LaunchScreen registration feedback', () => {
     const { click } = setupCountingUser()
     renderWithBar(<LancamentosPage />, { repository, route: '/lancamentos' })
 
-    await click(await screen.findByRole('button', { name: /Ana Paula/ }))
+    await click(await screen.findByRole('button', { name: /^Ana Paula/ }))
     await click(await screen.findByRole('button', { name: 'Lançar Camiseta do motoclube' }))
 
     await waitFor(() => {
@@ -199,7 +202,7 @@ describe('LaunchScreen quantity and courtesy', () => {
     const { click, user } = setupCountingUser()
     renderWithBar(<LancamentosPage />, { repository, route: '/lancamentos' })
 
-    await click(await screen.findByRole('button', { name: /Ana Paula/ }))
+    await click(await screen.findByRole('button', { name: /^Ana Paula/ }))
     await click(await screen.findByRole('button', {
       name: 'Quantidade e cortesia de Cerveja lata',
     }))
@@ -221,7 +224,7 @@ describe('LaunchScreen quantity and courtesy', () => {
     const { click } = setupCountingUser()
     renderWithBar(<LancamentosPage />, { repository, route: '/lancamentos' })
 
-    await click(await screen.findByRole('button', { name: /Rafael Oliveira/ }))
+    await click(await screen.findByRole('button', { name: /^Rafael Oliveira/ }))
     await click(await screen.findByRole('button', {
       name: 'Quantidade e cortesia de Água mineral',
     }))
@@ -253,7 +256,7 @@ describe('LaunchScreen quantity and courtesy', () => {
     const { click } = setupCountingUser()
     renderWithBar(<LancamentosPage />, { repository, route: '/lancamentos' })
 
-    await click(await screen.findByRole('button', { name: /Ana Paula/ }))
+    await click(await screen.findByRole('button', { name: /^Ana Paula/ }))
     await click(await screen.findByRole('button', { name: 'Lançar Cerveja lata' }))
     await waitFor(async () => {
       expect(launchedConsumptions(await repository.getSnapshot())).toHaveLength(1)
@@ -281,7 +284,7 @@ describe('LaunchScreen quantity and courtesy', () => {
 
 describe('LaunchScreen tab availability', () => {
   it('blocks a visitor without an active event and still allows a member', async () => {
-    const database = currentMonthDemo()
+    const database = createDemoDatabase()
     const repository = createRepository({
       ...database,
       events: database.events.map((event) => ({ ...event, status: EVENT_STATUS.CLOSED })),
@@ -289,7 +292,7 @@ describe('LaunchScreen tab availability', () => {
     const { click } = setupCountingUser()
     renderWithBar(<LancamentosPage />, { repository, route: '/lancamentos' })
 
-    await click(await screen.findByRole('button', { name: /Rafael Oliveira/ }))
+    await click(await screen.findByRole('button', { name: /^Rafael Oliveira/ }))
 
     expect(screen.getByRole('alert')).toHaveTextContent(
       'Nenhum evento ativo. Visitantes só recebem consumo durante um evento; ' +
@@ -298,7 +301,7 @@ describe('LaunchScreen tab availability', () => {
     expect(screen.queryByRole('button', { name: 'Lançar Cerveja lata' })).not.toBeInTheDocument()
 
     await click(screen.getByRole('button', { name: 'Trocar consumidor' }))
-    await click(await screen.findByRole('button', { name: /Ana Paula/ }))
+    await click(await screen.findByRole('button', { name: /^Ana Paula/ }))
     await click(await screen.findByRole('button', { name: 'Lançar Cerveja lata' }))
 
     await waitFor(async () => {
@@ -307,11 +310,11 @@ describe('LaunchScreen tab availability', () => {
   })
 
   it('explains a closed monthly tab instead of failing on the tap', async () => {
-    const database = currentMonthDemo()
+    const database = createDemoDatabase()
     const repository = createRepository({
       ...database,
       tabs: database.tabs.map((tab) =>
-        tab.id === 'tab-ana-2026-09'
+        tab.id === 'tab-ana-mensal'
           ? { ...tab, status: TAB_STATUS.CLOSED, closedAt: '2026-09-30T23:00:00.000Z' }
           : tab,
       ),
@@ -319,7 +322,7 @@ describe('LaunchScreen tab availability', () => {
     const { click } = setupCountingUser()
     renderWithBar(<LancamentosPage />, { repository, route: '/lancamentos' })
 
-    await click(await screen.findByRole('button', { name: /Ana Paula/ }))
+    await click(await screen.findByRole('button', { name: /^Ana Paula/ }))
 
     expect(screen.getByRole('alert')).toHaveTextContent(
       'A comanda mensal deste integrante já foi fechada. ' +
@@ -330,11 +333,11 @@ describe('LaunchScreen tab availability', () => {
   })
 
   it('shows the real balance of a closed monthly tab instead of calling it empty', async () => {
-    const database = currentMonthDemo()
+    const database = createDemoDatabase()
     const repository = createRepository({
       ...database,
       tabs: database.tabs.map((tab) =>
-        tab.id === 'tab-ana-2026-09'
+        tab.id === 'tab-ana-mensal'
           ? { ...tab, status: TAB_STATUS.CLOSED, closedAt: '2026-09-30T23:00:00.000Z' }
           : tab,
       ),
@@ -342,7 +345,7 @@ describe('LaunchScreen tab availability', () => {
     const { click } = setupCountingUser()
     renderWithBar(<LancamentosPage />, { repository, route: '/lancamentos' })
 
-    await click(await screen.findByRole('button', { name: /Ana Paula/ }))
+    await click(await screen.findByRole('button', { name: /^Ana Paula/ }))
     await click(screen.getByRole('button', { name: 'Ver comanda' }))
     const panel = screen.getByRole('complementary', { name: 'Comanda de Ana Paula' })
 
@@ -354,7 +357,7 @@ describe('LaunchScreen tab availability', () => {
   })
 
   it('offers no tab panel for a visitor when no event is active', async () => {
-    const database = currentMonthDemo()
+    const database = createDemoDatabase()
     const repository = createRepository({
       ...database,
       events: database.events.map((event) => ({ ...event, status: EVENT_STATUS.CLOSED })),
@@ -362,13 +365,13 @@ describe('LaunchScreen tab availability', () => {
     const { click } = setupCountingUser()
     renderWithBar(<LancamentosPage />, { repository, route: '/lancamentos' })
 
-    await click(await screen.findByRole('button', { name: /Rafael Oliveira/ }))
+    await click(await screen.findByRole('button', { name: /^Rafael Oliveira/ }))
 
     expect(screen.queryByRole('button', { name: 'Ver comanda' })).not.toBeInTheDocument()
   })
 
   it('explains a closed visitor tab instead of failing on the tap', async () => {
-    const database = currentMonthDemo()
+    const database = createDemoDatabase()
     const repository = createRepository({
       ...database,
       tabs: database.tabs.map((tab) =>
@@ -380,7 +383,7 @@ describe('LaunchScreen tab availability', () => {
     const { click } = setupCountingUser()
     renderWithBar(<LancamentosPage />, { repository, route: '/lancamentos' })
 
-    await click(await screen.findByRole('button', { name: /Rafael Oliveira/ }))
+    await click(await screen.findByRole('button', { name: /^Rafael Oliveira/ }))
 
     expect(screen.getByRole('alert')).toHaveTextContent(
       'A comanda deste visitante está fechada. Reabra a comanda para lançar consumo.',
@@ -414,11 +417,11 @@ describe('LaunchScreen visitor registration', () => {
 
 describe('LaunchScreen recent launches panel', () => {
   async function launchOneForAna() {
-    const repository = createRepository()
+    const repository = createRepository(demoWithoutConsumption())
     const helpers = setupCountingUser()
     renderWithBar(<LancamentosPage />, { repository, route: '/lancamentos' })
 
-    await helpers.click(await screen.findByRole('button', { name: /Ana Paula/ }))
+    await helpers.click(await screen.findByRole('button', { name: /^Ana Paula/ }))
     await helpers.click(await screen.findByRole('button', { name: 'Lançar Cerveja lata' }))
     await waitFor(async () => {
       expect(launchedConsumptions(await repository.getSnapshot())).toHaveLength(1)
@@ -453,7 +456,7 @@ describe('LaunchScreen recent launches panel', () => {
     }))
     await user.selectOptions(
       screen.getByLabelText('Novo consumidor de Cerveja lata de Ana Paula'),
-      'tab-bruno-2026-09',
+      'tab-bruno-mensal',
     )
     await click(screen.getByRole('button', {
       name: 'Confirmar troca de Cerveja lata de Ana Paula',

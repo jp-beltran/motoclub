@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
-import { describeRepositoryError } from './error-messages'
+import {
+  CANCELLATION_BLOCK,
+  CANCELLATION_BLOCK_REASONS,
+} from '../domain/cancellation'
+import { describeCancellationBlock, describeRepositoryError } from './error-messages'
 
 describe('describeRepositoryError', () => {
   it.each([
@@ -15,6 +19,18 @@ describe('describeRepositoryError', () => {
     ['Quantity must be a positive integer', 'A quantidade precisa ser um número inteiro maior que zero.'],
     ['Consumption quantity must be a positive safe integer', 'A quantidade precisa ser um número inteiro maior que zero.'],
     ['Visitor name is required', 'Informe o nome do visitante.'],
+    [
+      'Consumption is frozen in a member statement',
+      'Este lançamento já foi consolidado no extrato mensal e não pode mais ser cancelado.',
+    ],
+    [
+      'Consumption belongs to a closed tab',
+      'Esta comanda está fechada e o lançamento não pode mais ser cancelado.',
+    ],
+    [
+      'Consumption is covered by a settled payment',
+      'Já existe pagamento registrado que cobre este lançamento.',
+    ],
   ])('translates %s', (message, expected) => {
     expect(describeRepositoryError(new Error(message))).toBe(expected)
   })
@@ -41,6 +57,24 @@ describe('describeRepositoryError', () => {
 
     causes.forEach((cause) => {
       expect(describeRepositoryError(new Error(cause))).not.toContain(cause)
+    })
+  })
+})
+
+describe('describeCancellationBlock', () => {
+  it('gives every block the same pt-BR sentence the thrown cause maps to', () => {
+    Object.values(CANCELLATION_BLOCK).forEach((block) => {
+      expect(describeCancellationBlock(block)).toBe(
+        describeRepositoryError(new Error(CANCELLATION_BLOCK_REASONS[block])),
+      )
+    })
+  })
+
+  it('never falls back, so a blocked control always states its reason', () => {
+    Object.values(CANCELLATION_BLOCK).forEach((block) => {
+      expect(describeCancellationBlock(block)).not.toBe(
+        'Não foi possível concluir a operação. Tente novamente.',
+      )
     })
   })
 })

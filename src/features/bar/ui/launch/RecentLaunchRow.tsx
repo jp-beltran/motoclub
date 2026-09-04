@@ -1,6 +1,7 @@
 import { useState } from 'react'
 
 import type { ReassignTarget } from '../../application/consumer-tab'
+import { describeCancellationBlock } from '../../application/error-messages'
 import type { RecentLaunch } from '../../application/recent-launches'
 import { formatCents, formatDateTime, formatQuantity } from '../../../../shared/format'
 import { Button } from '../../../../shared/ui/Button'
@@ -20,7 +21,15 @@ export interface RecentLaunchRowProps {
   readonly onCancel: () => void
 }
 
-/** One correction row: fix the quantity, move it to another tab, or undo it. */
+/**
+ * One correction row: fix the quantity, move it to another tab, or undo it.
+ *
+ * Both "Editar quantidade" and "Cancelar" go through the repository's
+ * `cancelConsumption`, which refuses a launch already frozen into a member
+ * statement, sitting on a closed tab, or covered by a settled payment. Where
+ * that applies the row disables them and prints the reason, rather than
+ * offering a click that only fails afterwards.
+ */
 export function RecentLaunchRow({
   launch,
   targets,
@@ -35,6 +44,9 @@ export function RecentLaunchRow({
   const parsedQuantity = Number.parseInt(quantity, 10)
   const hasValidQuantity = Number.isInteger(parsedQuantity) && parsedQuantity > 0
   const label = `${launch.itemName} de ${launch.consumerName}`
+  const blockReason = launch.cancellationBlock
+    ? describeCancellationBlock(launch.cancellationBlock)
+    : undefined
 
   return (
     <li className="flex flex-col gap-2 rounded-lg border border-border-subtle bg-surface-raised p-3">
@@ -57,6 +69,8 @@ export function RecentLaunchRow({
           variant="ghost"
           aria-label={`Editar quantidade de ${label}`}
           aria-expanded={mode === 'quantity'}
+          disabled={Boolean(blockReason)}
+          title={blockReason}
           onClick={() => setMode((current) => (current === 'quantity' ? 'idle' : 'quantity'))}
           className="text-xs"
         >
@@ -75,12 +89,16 @@ export function RecentLaunchRow({
         <Button
           variant="danger"
           aria-label={`Cancelar ${label}`}
+          disabled={Boolean(blockReason)}
+          title={blockReason}
           onClick={onCancel}
           className="text-xs"
         >
           Cancelar
         </Button>
       </div>
+
+      {blockReason ? <p className="text-xs text-content-muted">{blockReason}</p> : null}
 
       {mode === 'quantity' ? (
         <div className="flex flex-wrap items-end gap-2 rounded-md bg-surface-overlay p-3">
