@@ -1,10 +1,11 @@
 import { expect, test } from '@playwright/test'
 
-import { ACTIVE_EVENT_NAME } from './test-utils'
+import { ACTIVE_EVENT_NAME, resetDemoDatabase } from './test-utils'
 
 test('renders the dark shell with the demo active event at the dashboard route', async ({
   page,
 }) => {
+  await resetDemoDatabase(page)
   await page.goto('/')
 
   await expect(page.getByRole('heading', { name: 'Painel' })).toBeVisible()
@@ -17,6 +18,7 @@ test('renders the dark shell with the demo active event at the dashboard route',
 })
 
 test('navigates to every area route via the persistent sidebar', async ({ page }) => {
+  await resetDemoDatabase(page)
   await page.goto('/')
 
   const nav = page.getByRole('navigation', { name: 'Navegação principal' })
