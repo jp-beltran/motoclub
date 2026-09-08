@@ -85,6 +85,122 @@ describe('invokeRpcMethod', () => {
     const result = await invokeRpcMethod(repository as never, 'closeVisitorTab', ['tab-1'])
     expect(result).toEqual({ tabId: 'tab-1' })
   })
+
+  describe('argument-shape validation (rejects a malformed call before it ever reaches the repository)', () => {
+    it('rejects too few arguments for a none-shaped method', async () => {
+      const repository = new Proxy({}, { get: () => { throw new Error('must not be called') } })
+      await expect(
+        invokeRpcMethod(repository as never, 'getSnapshot', ['unexpected']),
+      ).rejects.toMatchObject({ code: 'bad-request', status: 400 })
+    })
+
+    it('rejects zero arguments for an object-shaped method (the createVisitor([]) repro)', async () => {
+      const repository = new Proxy({}, { get: () => { throw new Error('must not be called') } })
+      await expect(
+        invokeRpcMethod(repository as never, 'createVisitor', []),
+      ).rejects.toMatchObject({ code: 'bad-request', status: 400 })
+    })
+
+    it('rejects zero arguments for createMonthlyClosing([]) and addStockMovement([])', async () => {
+      const repository = new Proxy({}, { get: () => { throw new Error('must not be called') } })
+      await expect(
+        invokeRpcMethod(repository as never, 'createMonthlyClosing', []),
+      ).rejects.toMatchObject({ code: 'bad-request', status: 400 })
+      await expect(
+        invokeRpcMethod(repository as never, 'addStockMovement', []),
+      ).rejects.toMatchObject({ code: 'bad-request', status: 400 })
+    })
+
+    it('rejects zero arguments for a string-shaped method (closeVisitorTab([]))', async () => {
+      const repository = new Proxy({}, { get: () => { throw new Error('must not be called') } })
+      await expect(
+        invokeRpcMethod(repository as never, 'closeVisitorTab', []),
+      ).rejects.toMatchObject({ code: 'bad-request', status: 400 })
+    })
+
+    it('rejects a non-string argument for a string-shaped method', async () => {
+      const repository = new Proxy({}, { get: () => { throw new Error('must not be called') } })
+      await expect(
+        invokeRpcMethod(repository as never, 'closeVisitorTab', [123]),
+      ).rejects.toMatchObject({ code: 'bad-request', status: 400 })
+    })
+
+    it('rejects a non-object argument (string, null, array) for an object-shaped method', async () => {
+      const repository = new Proxy({}, { get: () => { throw new Error('must not be called') } })
+      await expect(
+        invokeRpcMethod(repository as never, 'createVisitor', ['not an object']),
+      ).rejects.toMatchObject({ code: 'bad-request', status: 400 })
+      await expect(
+        invokeRpcMethod(repository as never, 'createVisitor', [null]),
+      ).rejects.toMatchObject({ code: 'bad-request', status: 400 })
+      await expect(
+        invokeRpcMethod(repository as never, 'createVisitor', [[]]),
+      ).rejects.toMatchObject({ code: 'bad-request', status: 400 })
+    })
+
+    it('rejects too many arguments (extra positional args, and the theoretical RangeError-from-apply case)', async () => {
+      const repository = new Proxy({}, { get: () => { throw new Error('must not be called') } })
+      await expect(
+        invokeRpcMethod(repository as never, 'recordPayment', [{}, {}]),
+      ).rejects.toMatchObject({ code: 'bad-request', status: 400 })
+    })
+
+    it('accepts a well-formed call for every shape (none/string/object) without throwing', async () => {
+      const repository = {
+        getSnapshot: async () => ({}),
+        closeVisitorTab: async (tabId: string) => ({ tabId }),
+        createVisitor: async (input: unknown) => ({ input }),
+      }
+      await expect(invokeRpcMethod(repository as never, 'getSnapshot', [])).resolves.toEqual({})
+      await expect(
+        invokeRpcMethod(repository as never, 'closeVisitorTab', ['tab-1']),
+      ).resolves.toEqual({ tabId: 'tab-1' })
+      await expect(
+        invokeRpcMethod(repository as never, 'createVisitor', [{ name: 'Ana' }]),
+      ).resolves.toEqual({ input: { name: 'Ana' } })
+    })
+  })
+
+  describe('a raw TypeError from a correctly-shaped-but-incomplete argument', () => {
+    it('is reclassified as a 400 bad-request, not a 500 internal-error (the createVisitor([{}]) repro)', async () => {
+      const repository = {
+        createVisitor: async (input: { name: string }) => {
+          // Exactly what LocalBarRepository.createVisitor does first:
+          // `input.name.trim()`. `{}` has no `name`, so this throws a raw
+          // TypeError — the caller's fault (a missing required field), not
+          // the server's.
+          const name = input.name.trim()
+          return { name }
+        },
+      }
+      await expect(
+        invokeRpcMethod(repository as never, 'createVisitor', [{}]),
+      ).rejects.toMatchObject({ code: 'bad-request', status: 400 })
+    })
+
+    it('does not reclassify a BarError the same way — domain refusals keep their own code', async () => {
+      const repository = {
+        createVisitor: async () => {
+          throw new BarError('visitor-name-required', 'Visitor name is required')
+        },
+      }
+      await expect(invokeRpcMethod(repository as never, 'createVisitor', [{ name: '' }])).rejects.toBeInstanceOf(
+        BarError,
+      )
+    })
+
+    it('does not reclassify an unrelated Error (e.g. a genuine internal fault) as bad-request', async () => {
+      const repository = {
+        createVisitor: async () => {
+          throw new Error('disk on fire')
+        },
+      }
+      const rejection = await invokeRpcMethod(repository as never, 'createVisitor', [
+        { name: 'Ana' },
+      ]).catch((error: unknown) => error)
+      expect(rejection).not.toMatchObject({ code: 'bad-request' })
+    })
+  })
 })
 
 describe('BAR_ERROR_STATUS', () => {
