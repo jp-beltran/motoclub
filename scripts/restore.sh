@@ -47,6 +47,8 @@ parse_args() {
 
 # shellcheck source=lib/version.sh
 source "$SCRIPT_DIR/lib/version.sh"
+# shellcheck source=lib/env-file.sh
+source "$SCRIPT_DIR/lib/env-file.sh"
 
 # node:sqlite só existe a partir do Node 22.5 — um node do PATH mais
 # antigo que isso não deve ser usado para checar integridade: na melhor
@@ -90,15 +92,12 @@ check_integrity() {
 # (formato scrypt$salt$hash) que um `source` trataria como expansão de
 # variável, corrompendo o valor em silêncio.
 read_env_file_var() {
-  local file="$1" var="$2"
-  local value=""
-  if [ -f "$file" ]; then
-    # "|| true": não achar a variável no arquivo é normal (ela pode não
-    # estar lá), não um erro — e este script roda com `set -e`, então um
-    # grep sem match aqui derrubaria o script inteiro se deixado propagar.
-    value="$(grep -E "^${var}=" "$file" 2>/dev/null | tail -1 | cut -d= -f2-)" || true
-  fi
-  printf '%s' "$value"
+  # Delega para lib/env-file.sh: havia três cópias quase iguais desta
+  # leitura (aqui, no doctor.sh e no install.sh), e foi nessa duplicação
+  # que nasceram os bugs de parsing. A implementação compartilhada também
+  # tira as aspas envolventes, necessárias para o arquivo de segredos ser
+  # lido igual pelo systemd e por quem der `source` nele.
+  env_file_var "$1" "$2"
 }
 
 resolve_config() {
