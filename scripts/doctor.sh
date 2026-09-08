@@ -67,6 +67,8 @@ NODE_MIN_VERSION="22.5.0"
 
 # shellcheck source=lib/version.sh
 source "$SCRIPT_DIR/lib/version.sh"
+# shellcheck source=lib/env-file.sh
+source "$SCRIPT_DIR/lib/env-file.sh"
 # shellcheck source=lib/xfce-power-props.sh
 source "$SCRIPT_DIR/lib/xfce-power-props.sh"
 
@@ -102,13 +104,14 @@ NODE_BIN="$(find_node)"
 # de systemd (KEY=value literal), não um script — lemos assim: extração de
 # texto puro, sem nenhuma interpretação.
 read_env_var() {
-  local var="$1"
-  local value=""
-  if [ -f "$ENV_FILE" ]; then
-    # "|| true": não achar a variável é normal, não um erro.
-    value="$(grep -E "^${var}=" "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2-)" || true
-  fi
-  printf '%s' "$value"
+  # Delega para lib/env-file.sh, que é também quem o install.sh e o
+  # restore.sh usam. Importa aqui em particular porque check_env_file()
+  # valida BAR_PIN_HASH contra ^scrypt$hex$hex$: sem tirar as aspas
+  # envolventes, um arquivo de segredos novo (que grava os valores entre
+  # aspas simples) seria julgado "formato inválido", e a orientação
+  # impressa manda apagar o arquivo e reinstalar — ou seja, rotacionaria
+  # um PIN que está funcionando.
+  env_file_var "$ENV_FILE" "$1"
 }
 
 DB_PATH="$(read_env_var BAR_DB_PATH)"

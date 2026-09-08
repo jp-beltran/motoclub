@@ -41,6 +41,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # shellcheck source=lib/version.sh
 source "$SCRIPT_DIR/lib/version.sh"
+# shellcheck source=lib/env-file.sh
+source "$SCRIPT_DIR/lib/env-file.sh"
 
 # --- configuração (todas sobrescrevíveis para teste, ver cabeçalho) ---------
 
@@ -365,6 +367,18 @@ prompt_usb_path() {
     return 0
   fi
 
+  # Apóstrofo no caminho é barrado aqui, na entrada, e não lá na
+  # escrita: systemd e shell leem escapes de apóstrofo de formas
+  # diferentes (medido — ver lib/env-file.sh), então o arquivo de
+  # segredos passaria a significar duas coisas conforme quem lê.
+  case "$path" in
+    *\'*)
+      fail "o caminho '$path' contém apóstrofo, que não pode ir para o arquivo de segredos. Renomeie o diretório (ou monte o pendrive em outro ponto) e rode o instalador de novo. Pulando o pendrive por enquanto."
+      printf ''
+      return 0
+      ;;
+  esac
+
   # ">&2" aqui não é opcional: esta função devolve o caminho escrevendo em
   # stdout (é assim que os dois chamadores capturam com "$(...)"), e "ok"
   # também escreve em stdout por padrão. Sem o redirecionamento, a saída
@@ -378,7 +392,7 @@ prompt_usb_path() {
 
 ensure_usb_config_update_only() {
   local existing
-  existing="$(grep -E '^BAR_BACKUP_USB_PATH=' "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2- || true)"
+  existing="$(env_file_var "$ENV_FILE" BAR_BACKUP_USB_PATH)"
   if [ -n "$existing" ]; then
     ok "pendrive de backup já configurado: $existing"
     return 0
@@ -392,7 +406,16 @@ ensure_usb_config_update_only() {
   local usb_path
   usb_path="$(prompt_usb_path)"
   if [ -n "$usb_path" ]; then
-    echo "BAR_BACKUP_USB_PATH=$usb_path" >> "$ENV_FILE"
+    # env_file_line recusa valor com apóstrofo (systemd e shell leem
+    # escapes de apóstrofo de formas diferentes). prompt_usb_path já
+    # barra isso na entrada; aqui é a segunda tranca, para não escrever
+    # no arquivo de segredos algo ambíguo se um caminho vier por
+    # MOTOCLUB_INSTALL_USB_PATH.
+    if ! env_file_line BAR_BACKUP_USB_PATH "$usb_path" >> "$ENV_FILE"; then
+      warn "pendrive NÃO registrado — o caminho contém apóstrofo. Os backups vão existir só no HD interno."
+      return 0
+    fi
+    printf '\n' >> "$ENV_FILE"
     ok "pendrive registrado em $ENV_FILE"
   fi
 }
@@ -468,11 +491,17 @@ ensure_secrets() {
   local usb_path
   usb_path="$(prompt_usb_path)"
 
+  # Valores entre aspas simples: é a única forma em que o systemd
+  # (EnvironmentFile) e o shell (`source`, quando alguém for depurar)
+  # leem exatamente o mesmo valor. Ver o cabeçalho de lib/env-file.sh
+  # para a medição.
   {
-    echo "BAR_PIN_HASH=$pin_hash"
-    echo "BAR_SESSION_SECRET=$session_secret"
+    env_file_line BAR_PIN_HASH "$pin_hash"; printf '\n'
+    env_file_line BAR_SESSION_SECRET "$session_secret"; printf '\n'
     if [ -n "$usb_path" ]; then
-      echo "BAR_BACKUP_USB_PATH=$usb_path"
+      if env_file_line BAR_BACKUP_USB_PATH "$usb_path"; then
+        printf '\n'
+      fi
     fi
   } > "$ENV_FILE"
   chmod 600 "$ENV_FILE"
