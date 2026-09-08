@@ -7,8 +7,9 @@ import {
   createSessionToken,
   guardLoginAttempt,
   hashPin,
+  LOGIN_DELAY_STEP_MS,
   LOGIN_FAILURE_THRESHOLD,
-  LOGIN_THROTTLE_DELAY_MS,
+  LOGIN_MAX_DELAY_MS,
   readSessionToken,
   recordLoginFailure,
   recordLoginSuccess,
@@ -133,14 +134,26 @@ describe('login throttle', () => {
     expect(sleep).not.toHaveBeenCalled()
   })
 
-  it('delays once the failure threshold is reached', async () => {
+  it('delays once the failure threshold is reached, escalating with the failure count', async () => {
     const throttle = createLoginThrottle()
     const sleep = vi.fn().mockResolvedValue(undefined)
     for (let i = 0; i < LOGIN_FAILURE_THRESHOLD; i += 1) {
       recordLoginFailure(throttle)
     }
     await guardLoginAttempt(throttle, sleep)
-    expect(sleep).toHaveBeenCalledWith(LOGIN_THROTTLE_DELAY_MS)
+    expect(sleep).toHaveBeenCalledWith(LOGIN_FAILURE_THRESHOLD * LOGIN_DELAY_STEP_MS)
+
+    recordLoginFailure(throttle)
+    await guardLoginAttempt(throttle, sleep)
+    expect(sleep).toHaveBeenLastCalledWith((LOGIN_FAILURE_THRESHOLD + 1) * LOGIN_DELAY_STEP_MS)
+  })
+
+  it('caps the escalating delay at LOGIN_MAX_DELAY_MS', async () => {
+    const throttle = createLoginThrottle()
+    throttle.failures = 10_000
+    const sleep = vi.fn().mockResolvedValue(undefined)
+    await guardLoginAttempt(throttle, sleep)
+    expect(sleep).toHaveBeenCalledWith(LOGIN_MAX_DELAY_MS)
   })
 
   it('resets the failure counter on success, lifting the delay', async () => {
@@ -150,5 +163,53 @@ describe('login throttle', () => {
     const sleep = vi.fn().mockResolvedValue(undefined)
     await guardLoginAttempt(throttle, sleep)
     expect(sleep).not.toHaveBeenCalled()
+  })
+
+  it('serializes concurrent attempts once throttled, instead of letting each pay the delay in parallel', async () => {
+    const throttle = createLoginThrottle()
+    for (let i = 0; i < LOGIN_FAILURE_THRESHOLD; i += 1) recordLoginFailure(throttle)
+
+    const order: number[] = []
+    let releaseFirst: () => void = () => {}
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve
+    })
+    const sleep = vi
+      .fn()
+      .mockImplementationOnce(async () => {
+        order.push(1)
+        await firstGate
+      })
+      .mockImplementationOnce(async () => {
+        order.push(2)
+      })
+
+    const first = guardLoginAttempt(throttle, sleep)
+    const second = guardLoginAttempt(throttle, sleep)
+
+    // The second attempt must not have started its own delay yet — it is
+    // queued behind the first, not running in parallel with it.
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(sleep).toHaveBeenCalledTimes(1)
+
+    releaseFirst()
+    await first
+    await second
+    expect(order).toEqual([1, 2])
+  })
+
+  it('a throttled attempt still runs after an earlier one that never resolves its sleep is abandoned by the caller', async () => {
+    // Guards against the queue getting stuck forever if one caller's own
+    // sleep implementation were to hang: recordLoginSuccess mid-queue
+    // should still let a later guardLoginAttempt call go through once its
+    // own turn comes up, as long as sleep itself settles.
+    const throttle = createLoginThrottle()
+    for (let i = 0; i < LOGIN_FAILURE_THRESHOLD; i += 1) recordLoginFailure(throttle)
+    const sleep = vi.fn().mockResolvedValue(undefined)
+    await guardLoginAttempt(throttle, sleep)
+    recordLoginSuccess(throttle)
+    await guardLoginAttempt(throttle, sleep)
+    expect(sleep).toHaveBeenCalledTimes(1)
   })
 })

@@ -141,7 +141,12 @@ export function readSessionToken(cookieHeader: string | undefined): string | und
 
 /** After this many consecutive failures, `guardLoginAttempt` adds a delay. */
 export const LOGIN_FAILURE_THRESHOLD = 5
-export const LOGIN_THROTTLE_DELAY_MS = 2000
+/** The delay grows by this much per failure past the threshold. */
+export const LOGIN_DELAY_STEP_MS = 500
+/** ...up to this ceiling, so a very stale counter cannot produce an
+ * effectively unbounded (and therefore self-defeating, "the operator is
+ * now locked out too") wait. */
+export const LOGIN_MAX_DELAY_MS = 30_000
 
 /**
  * In-memory only, by design (the plan's own words: "contador de falhas com
@@ -149,13 +154,22 @@ export const LOGIN_THROTTLE_DELAY_MS = 2000
  * server has no per-client identity to key a smarter throttle on, and a
  * restart clearing this counter is an acceptable, rare cost against the
  * alternative of a persisted lockout an operator could get stuck behind.
+ *
+ * `queue` is what makes the delay actually cost an attacker something:
+ * without it, N concurrent guesses each independently `await
+ * sleep(delay)` and all finish together after one delay's wall-clock
+ * time, so N attempts cost the same as one — the fixed-delay version of
+ * this function measured exactly that. Chaining every call onto `queue`
+ * forces attempts through one at a time, so throughput is bounded by
+ * `1 / delay`, not by how many requests the caller can fire in parallel.
  */
 export interface LoginThrottle {
   failures: number
+  queue: Promise<void>
 }
 
 export function createLoginThrottle(): LoginThrottle {
-  return { failures: 0 }
+  return { failures: 0, queue: Promise.resolve() }
 }
 
 function defaultSleep(ms: number): Promise<void> {
@@ -163,19 +177,35 @@ function defaultSleep(ms: number): Promise<void> {
 }
 
 /**
- * Called before checking a submitted PIN. Once `failures` has reached the
- * threshold, every further attempt pays a fixed delay first — cheap to
- * reason about, and enough to make a naive four-digit brute force take
- * hours instead of seconds, which is the whole point on a shared,
- * unlimited-attempts PIN.
+ * Called before checking a submitted PIN. Below the threshold there is no
+ * queueing and no delay at all — `scryptSync`'s own cost (tens to a few
+ * hundred milliseconds on this hardware; slower still on the target
+ * notebook's APU) is what protects the fast path, and the plan is explicit
+ * that on a loopback, shared-PIN server this whole mechanism is a screen
+ * lock, not a security boundary.
+ *
+ * Once `failures` reaches the threshold, every further attempt is
+ * serialized behind `throttle.queue` (see the interface doc for why that
+ * matters) and pays a delay that grows with the failure count
+ * (`LOGIN_DELAY_STEP_MS` per failure, capped at `LOGIN_MAX_DELAY_MS`) —
+ * together, a sustained attack really does get slower the longer it runs,
+ * which a flat per-call delay alone does not deliver under concurrency.
  */
-export async function guardLoginAttempt(
+export function guardLoginAttempt(
   throttle: LoginThrottle,
   sleep: (ms: number) => Promise<void> = defaultSleep,
 ): Promise<void> {
-  if (throttle.failures >= LOGIN_FAILURE_THRESHOLD) {
-    await sleep(LOGIN_THROTTLE_DELAY_MS)
-  }
+  const attempt = throttle.queue.then(async () => {
+    if (throttle.failures >= LOGIN_FAILURE_THRESHOLD) {
+      const delay = Math.min(throttle.failures * LOGIN_DELAY_STEP_MS, LOGIN_MAX_DELAY_MS)
+      await sleep(delay)
+    }
+  })
+  // Chain the next call onto this one regardless of outcome, so a
+  // rejected `sleep` (there is no reason for the real one to reject, but
+  // a test double could) cannot wedge every attempt behind it forever.
+  throttle.queue = attempt.catch(() => {})
+  return attempt
 }
 
 export function recordLoginFailure(throttle: LoginThrottle): void {
