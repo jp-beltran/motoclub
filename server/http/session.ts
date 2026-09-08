@@ -12,6 +12,18 @@ const HEX_PATTERN = /^[0-9a-f]+$/i
  * tests (and, if ever wanted, a small CLI) do not need to hand-roll the
  * format `scryptSync` + string interpolation the installer's own
  * documented one-liner produces (see `config.ts`).
+ *
+ * SHARED CONTRACT, DUPLICATED ON PURPOSE: `playwright.config.ts` and
+ * `scripts/lib/scrypt-hash.mjs` reimplement this same algorithm rather
+ * than importing it — the first so the e2e config's TypeScript project
+ * never has to resolve `server/`'s module graph just to boot a test
+ * server, the second so the installer can hash a PIN on a machine that
+ * has no build step at all. Nothing but these comments keeps the three
+ * from drifting: if you change `SCRYPT_SALT_LENGTH`,
+ * `SCRYPT_KEY_LENGTH`, or the `scrypt$<salt>$<hash>` layout here, change
+ * it in both of those too, or `verifyPin` starts rejecting a PIN the
+ * installer just accepted. The format is fixed by the shared backend
+ * contract (`.superpowers/sdd/prototipo-bar-ui/backend-contract.md`).
  */
 export function hashPin(pin: string): string {
   const salt = randomBytes(SCRYPT_SALT_LENGTH)
