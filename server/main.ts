@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import http from 'node:http'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -15,6 +16,18 @@ import { createRequestHandler } from './http/router'
 import { openNodeSqliteDriver, type SqlDriver } from './storage/driver'
 import { SCHEMA_SQL } from './storage/schema'
 import { SqliteStorage } from './storage/sqlite-storage'
+
+// Re-exported so `scripts/history.mjs` — which cannot compile TypeScript on
+// the target notebook (Fase 0/1: no compiler on that machine, only a Node
+// that executes) — can `import` these straight out of the already-built
+// `server/dist/server.mjs` instead of reimplementing the SQLite write path
+// (and its transactional-history guarantee) a second time in plain JS.
+// Importing this bundle for its exports, rather than running it, is safe:
+// `isEntryPoint()` (bottom of this file) only calls `main()` when this
+// module *is* `process.argv[1]`, which is false for a plain `import`.
+export { SqliteStorage } from './storage/sqlite-storage'
+export { openNodeSqliteDriver } from './storage/driver'
+export { SCHEMA_SQL } from './storage/schema'
 
 /**
  * Pure path arithmetic, split out from `defaultStaticDir` so it can be unit
@@ -140,6 +153,79 @@ export interface BootedServer {
 }
 
 /**
+ * Path of the sidecar PID-lock file that marks "a server process currently
+ * holds this database open for writes" — sits next to the db file, the
+ * same convention as SQLite's own `-wal`/`-shm` sidecars. Read by
+ * `checkLockStatus` below and, through the bundle re-export at the top of
+ * this file, by `scripts/history.mjs` before it restores a version: a
+ * restore is a plain SQLite write, so nothing at the SQLite layer stops it
+ * from racing a live server's own writes — this file is what lets the CLI
+ * refuse that race instead of silently risking a lost update.
+ */
+export function lockFilePath(dbPath: string): string {
+  return `${dbPath}.lock`
+}
+
+function writeLockFile(dbPath: string): void {
+  const contents = { pid: process.pid, startedAt: new Date().toISOString() }
+  writeFileSync(lockFilePath(dbPath), JSON.stringify(contents), 'utf8')
+}
+
+function removeLockFile(dbPath: string): void {
+  try {
+    unlinkSync(lockFilePath(dbPath))
+  } catch {
+    // Already gone (a second call, or a boot that never got this far) —
+    // shutdown must not fail over a lock file that was never there.
+  }
+}
+
+/** True iff the OS reports a process with this pid still exists. Used to
+ * tell a live lock apart from one a crash (SIGKILL, power loss) left
+ * behind without running `removeLockFile` — see `checkLockStatus`. */
+export function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code !== 'ESRCH'
+  }
+}
+
+export interface LockStatus {
+  readonly running: boolean
+  readonly pid?: number
+  readonly stale?: boolean
+}
+
+/**
+ * Whether a server process currently appears to hold `dbPath` open for
+ * writes. A missing or unparseable lock file, and a lock whose pid is no
+ * longer alive, are both reported as `running: false` — the pid-dead case
+ * is deliberately forgiving (a hard crash that skipped `removeLockFile`
+ * must not permanently block recovery) but is marked `stale: true` so a
+ * caller (`scripts/history.mjs`) can still tell an operator what it saw
+ * instead of silently proceeding as if the file had never existed.
+ */
+export function checkLockStatus(dbPath: string): LockStatus {
+  let raw: string
+  try {
+    raw = readFileSync(lockFilePath(dbPath), 'utf8')
+  } catch {
+    return { running: false }
+  }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    return { running: false }
+  }
+  const pid = (parsed as { pid?: unknown }).pid
+  if (typeof pid !== 'number') return { running: false }
+  return isProcessAlive(pid) ? { running: true, pid } : { running: false, pid, stale: true }
+}
+
+/**
  * Everything short of process-level wiring (signal handlers, the final
  * console log, `process.exit` on failure): opens the database, runs the
  * connection-dependent boot assertions, builds the repository, creates the
@@ -147,12 +233,17 @@ export interface BootedServer {
  * server end to end — an ephemeral port (`config.port = 0`), a temp-file
  * database — without importing this module's own `process.env`/
  * `process.exit`-touching `main()`.
+ *
+ * `writeLockFile` runs last, only once `listen()` has actually succeeded —
+ * a failed boot (e.g. the port is already in use) must not leave a lock
+ * file behind for a server that never really started.
  */
 export async function bootServer(config: ServerConfig): Promise<BootedServer> {
   const driver = await openDatabase(config)
   const repository = buildRepository(driver)
   const server = createHttpServer(repository, config)
   await listen(server, config.port, config.host)
+  writeLockFile(config.dbPath)
   return { server, driver, repository }
 }
 
@@ -234,14 +325,24 @@ export function shutdown(
  * completes. Kept separate from `shutdown` itself so a test can exercise
  * the shutdown *sequence* without registering real `process.on` listeners
  * or calling the real `process.exit` — both of which would affect the
- * test runner's own process, not just the server under test. */
-export function installShutdownHandlers(server: http.Server, driver: SqlDriver): void {
+ * test runner's own process, not just the server under test.
+ *
+ * `removeLockFile` runs here rather than inside `shutdown()` itself for the
+ * same reason: `shutdown()` is deliberately process-agnostic (a test calls
+ * it directly, with no lock file involved), while *this* function is only
+ * ever reached on a real process shutdown — the one case where the lock
+ * file genuinely needs to disappear so the next boot, or a `restore` run
+ * while this process is down, sees an honestly empty lock. */
+export function installShutdownHandlers(server: http.Server, driver: SqlDriver, dbPath: string): void {
   let shuttingDown = false
   const handle = (signal: NodeJS.Signals): void => {
     if (shuttingDown) return
     shuttingDown = true
     console.log(`Received ${signal}, shutting down`)
-    shutdown(server, driver).then(() => process.exit(0))
+    shutdown(server, driver).then(() => {
+      removeLockFile(dbPath)
+      process.exit(0)
+    })
   }
   process.on('SIGINT', () => handle('SIGINT'))
   process.on('SIGTERM', () => handle('SIGTERM'))
@@ -251,7 +352,7 @@ async function main(): Promise<void> {
   const config = loadConfig(process.env, { staticDir: defaultStaticDir() })
   const { server, driver } = await bootServer(config)
   console.log(`motoclub bar server listening on http://${config.host}:${config.port}`)
-  installShutdownHandlers(server, driver)
+  installShutdownHandlers(server, driver, config.dbPath)
 }
 
 /**

@@ -1,11 +1,18 @@
-import { execFileSync, fork } from 'node:child_process'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { execFileSync, fork, spawnSync } from 'node:child_process'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 import { hashPin } from './http/session'
-import { bootServer, resolveDistDirFromBundleDir, shutdown, type BootedServer } from './main'
+import {
+  bootServer,
+  checkLockStatus,
+  lockFilePath,
+  resolveDistDirFromBundleDir,
+  shutdown,
+  type BootedServer,
+} from './main'
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -206,6 +213,52 @@ describe('shutdown', () => {
   })
 })
 
+describe('lock file — marks "a server is holding this database open for writes"', () => {
+  it('lockFilePath names a sidecar next to the db file, same convention as -wal/-shm', () => {
+    expect(lockFilePath('/home/x/.local/share/motoclub/bar.sqlite3')).toBe(
+      '/home/x/.local/share/motoclub/bar.sqlite3.lock',
+    )
+  })
+
+  it('checkLockStatus reports "not running" when no lock file exists', () => {
+    workDir = mkdtempSync(join(tmpdir(), 'lock-status-test-'))
+    const dbPath = join(workDir, 'bar.sqlite3')
+
+    expect(checkLockStatus(dbPath)).toEqual({ running: false })
+  })
+
+  it('bootServer writes a lock file naming this process as the one holding the database open', async () => {
+    const { instance } = await startBootedServer()
+    void instance
+
+    const dbPath = join(workDir as string, 'bar.sqlite3')
+    expect(existsSync(lockFilePath(dbPath))).toBe(true)
+    expect(checkLockStatus(dbPath)).toEqual({ running: true, pid: process.pid })
+  })
+
+  it('checkLockStatus reports a stale lock (dead pid) as not running, but flags it as stale', () => {
+    workDir = mkdtempSync(join(tmpdir(), 'lock-status-test-'))
+    const dbPath = join(workDir, 'bar.sqlite3')
+    // A real short-lived process, so its pid is guaranteed to belong to
+    // nothing by the time this assertion runs — no guessing at an
+    // arbitrary "probably unused" pid number.
+    const dead = spawnSync(process.execPath, ['-e', ''])
+    const deadPid = dead.pid
+    if (!deadPid) throw new Error('failed to spawn a short-lived process for this test')
+    writeFileSync(lockFilePath(dbPath), JSON.stringify({ pid: deadPid, startedAt: new Date().toISOString() }), 'utf8')
+
+    expect(checkLockStatus(dbPath)).toEqual({ running: false, pid: deadPid, stale: true })
+  })
+
+  it('checkLockStatus tolerates a corrupt/unreadable lock file by reporting "not running"', () => {
+    workDir = mkdtempSync(join(tmpdir(), 'lock-status-test-'))
+    const dbPath = join(workDir, 'bar.sqlite3')
+    writeFileSync(lockFilePath(dbPath), 'not json at all', 'utf8')
+
+    expect(checkLockStatus(dbPath)).toEqual({ running: false })
+  })
+})
+
 /**
  * `shutdown()` above is well covered directly, but the actual wiring —
  * `process.on('SIGTERM', ...) -> shutdown() -> process.exit(0)` in
@@ -260,6 +313,12 @@ describe('installShutdownHandlers (real SIGTERM against the built bundle)', () =
       TZ: 'America/Sao_Paulo',
     })
 
+    // The lock file is what scripts/history.mjs checks before restoring a
+    // version — proving it names *this real child process*, alive, is what
+    // makes that refusal trustworthy rather than a check against a fake.
+    expect(existsSync(lockFilePath(dbPath))).toBe(true)
+    expect(checkLockStatus(dbPath)).toEqual({ running: true, pid: child.pid })
+
     const exitPromise = new Promise<number | null>((resolve) => {
       child.once('exit', (code) => resolve(code))
     })
@@ -269,6 +328,10 @@ describe('installShutdownHandlers (real SIGTERM against the built bundle)', () =
 
     expect(code).toBe(0)
     expect(stdoutRef.value).toContain('Received SIGTERM, shutting down')
+    // A graceful shutdown removes the lock — the next thing to run against
+    // this database (another `motoclub` start, or scripts/history.mjs) must
+    // not see a live-looking lock for a process that just exited cleanly.
+    expect(existsSync(lockFilePath(dbPath))).toBe(false)
   }, 15000)
 })
 
