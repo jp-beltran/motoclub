@@ -16,6 +16,15 @@ const PORT = 4173
  * `server/`'s module graph just to boot the test server. The format
  * itself is fixed by the shared backend contract
  * (`.superpowers/sdd/prototipo-bar-ui/backend-contract.md`).
+ *
+ * SHARED CONTRACT, DUPLICATED ON PURPOSE: this is the same algorithm as
+ * `server/http/session.ts`'s `hashPin`, by hand, not by import — see the
+ * paragraph above for why. Nothing but this comment (and the matching one
+ * on `hashPin` itself) keeps the two from drifting apart: if you change
+ * either the salt length, the key length, or the `scrypt$<salt>$<hash>`
+ * layout in one place, update it in the other, or `verifyPin` on the
+ * server will silently reject every PIN this file hashes for the e2e
+ * server it boots.
  */
 function hashPinForE2e(pin: string): string {
   const salt = randomBytes(16)
