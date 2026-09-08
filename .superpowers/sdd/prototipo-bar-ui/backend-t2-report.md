@@ -352,7 +352,7 @@ consumption survived: {"id":"594b91a1-...","itemId":"item-agua", ...}         # 
 (Full `pin`/salt/hash values and the intermediate tab-id plumbing are in the transcript run
 above this report; omitted here only for length, not redacted for any other reason.)
 
-## Verification — real output
+## Verification — real output (before the fix round)
 
 **`npm run test:server`**:
 ```
@@ -399,6 +399,178 @@ server/dist/server.mjs  69.2kb
 Running 9 tests using 6 workers
   9 passed (~20s)
 ```
+
+## Fix round 1 (opus review)
+
+An independent review (opus) tried three concrete attacks against this slice — a gate bypass,
+a corruption path, and a read outside `dist/` — and got none of them; verdict "safe for the
+client swap." It called out four things explicitly as correct-by-construction and asked not to
+be touched: the allowlist (`Set.has` over literals, never a property lookup, with `keyof
+BarRepository` + `Exclude → never` locking it at compile time), the exhaustive 43-for-43 status
+map, `timingSafeEqual`'s two closed throw paths, and the shutdown fix from the previous round
+(praised as a real bug found by writing a real test). None of those four were touched in this
+round — only the six findings below were addressed, each with a failing test written first.
+
+**1. (Important) RPC arguments had no shape validation, so a malformed body produced 500, not
+4xx.** Confirmed the exact reproductions the review listed, all as failing tests before the fix:
+`createVisitor([])`, `createVisitor([{}])`, `createMonthlyClosing([])`, `addStockMovement([])`,
+and `selectOrCreateActiveEvent([{}])` with no active event all threw a raw `TypeError` that fell
+into the generic 500 `internal-error` catch-all. Fixed in two layers in `server/http/rpc.ts`:
+
+- `RPC_ARG_SHAPES: Readonly<Record<RpcMethodName, 'none' | 'string' | 'object'>>`, exhaustive
+  over the port the same way `RPC_METHOD_NAMES` and `BAR_ERROR_STATUS` are (a 25th method fails
+  `tsc` here too). Checked in `validateRpcArgs` before the port is ever called — closes every
+  `[]`-arity case, and incidentally rejects an absurdly long `args` array before it could reach
+  `Function.prototype.apply`'s own `RangeError`.
+- A raw `TypeError` escaping the actual call is reclassified as 400 `bad-request` inside
+  `invokeRpcMethod`. This closes the harder case the shape table alone cannot — a
+  correctly-shaped object missing one *required field* deep inside, e.g. `createVisitor({})`'s
+  `input.name.trim()` — without re-deriving each method's own field-level rules from `src/`. A
+  `BarError` and any other `Error` are left untouched, verified by two tests: one confirms a
+  domain refusal still surfaces with its own code, one confirms an unrelated `Error` ("disk on
+  fire") is never reclassified as the caller's fault.
+
+  As a side effect, `closeVisitorTab([])` now consistently answers 400 (it used to accidentally
+  answer 422, because that particular guard tolerates `undefined` without throwing) —
+  `recordPayment([{}])` is unchanged, still 422 `money-amount-not-positive`, and is covered by
+  its own end-to-end test to prove the fix did not touch it.
+
+  TDD evidence: `server/http/rpc.test.ts` grew a `describe('argument-shape validation', ...)`
+  block (8 tests) and a `describe('a raw TypeError from a correctly-shaped-but-incomplete
+  argument', ...)` block (3 tests), all red before the fix (`expected Error to match object {
+  code: 'bad-request', status: 400 }`), green after. `server/http/router.test.ts` grew a
+  `describe('malformed RPC arguments end to end (real repository, real HTTP)', ...)` block (7
+  tests) reproducing every one of the review's own repro cases against a real `LocalBarRepository`
+  and a real HTTP server — including a new `seedEmptyDatabase` fixture helper, since the demo seed
+  always has an active event and the `selectOrCreateActiveEvent` repro specifically needs one that
+  does not.
+
+**2. Only `/assets/*` was served; a root-level `dist/` file 404'd, and a test froze that as
+correct.** Added `serveRootStaticFile` (`server/http/static.ts`), sharing the same
+traversal-guarded resolver as `serveStaticAsset` via a new `sendFileIfPresent` helper, with its
+own `Cache-Control: no-cache` — deliberately not `/assets/*`'s year-long `immutable`, since these
+filenames (`favicon.ico`, `robots.txt`, a manifest) are not content-hashed and their bytes can
+change on the same URL. `router.ts`'s routing now tries this for any GET outside `/api` with a
+dotted last segment not already under `/assets/*`, before a plain 404; the SPA fallback (no dot)
+is unchanged. The `router.test.ts` fixture gained a real `favicon.ico`; the test that used to
+assert `/favicon.ico` → 404 now asserts it is served (200, non-immutable caching), and a new,
+separate test keeps covering a genuinely missing dotted file (→ 404), so that regression is not
+lost.
+
+**3. The throttle comment claimed more than the code delivered.** Verified the review's own
+diagnosis by reading `guardLoginAttempt`: the fixed 2s delay did not serialize, so N concurrent
+guesses each independently paid it and all finished together — N attempts cost the same as one.
+Fixed by chaining every call onto `throttle.queue` (`server/http/session.ts`), so attempts past
+the threshold are genuinely serialized, and escalating the delay with the failure count
+(`LOGIN_DELAY_STEP_MS` per failure, capped at `LOGIN_MAX_DELAY_MS`) instead of a flat value. The
+comment now says what the code does, and credits `scryptSync`'s own cost (not the delay) for
+protecting the fast path below the threshold, matching the plan's own framing ("tranca de tela,
+não fronteira de segurança"). New tests in `session.test.ts`: escalation (asserted with two
+different failure counts), a cap test, and a serialization test (two concurrent calls, the
+second's `sleep` provably not invoked until the first's resolves) — all red before the fix
+(`expected "spy" to be called 1 times, but got 2 times` for serialization; wrong delay value for
+escalation), green after. `LOGIN_THROTTLE_DELAY_MS` (the removed fixed constant) was replaced
+everywhere it was referenced, including in `router.test.ts`.
+
+**4. `shutdown()` had no upper bound.** A request that never resolves is "in flight" forever as
+far as `server.close()` is concerned, so the promise — and `systemctl restart motoclub` — would
+never return on its own, until systemd's own SIGKILL ends it uncleanly. Added a `timeoutMs`
+parameter to `shutdown()` (default `SHUTDOWN_TIMEOUT_MS = 5_000`): after it elapses,
+`closeAllConnections()` force-closes even a connection mid-request, and `finish()` is called
+directly right after rather than only trusting `close()`'s own callback to react to the
+now-empty connection set on its own schedule; a `settled` guard keeps the graceful path and the
+forced path from ever closing the driver twice. New test in `main.test.ts`: a `getSnapshot`
+override that never resolves, `shutdown(server, driver, 100)`, asserts the promise still
+resolves in well under a second and the driver is genuinely closed. Red before the fix (the test
+hung past its 5s test timeout and the 10s `afterEach` hook timeout — a real hang, not a
+timing assertion failure), green after.
+
+**5. `installShutdownHandlers`'s actual wiring had no test.** `shutdown()` itself was well
+covered, but `process.on('SIGTERM') -> shutdown() -> process.exit(0)` was not — registering a
+real handler for that test would touch the test runner's own process. Added a test that builds
+the real bundle (`npx esbuild ...`, the same command `build:server` runs, via `execFileSync`),
+forks it with `child_process.fork` (a genuinely separate process), and sends it a real
+`SIGTERM`, asserting a clean `exit 0` and the `"Received SIGTERM, shutting down"` log line.
+`BAR_PORT=0` (this suite's usual "let the OS pick" trick) is refused by `config.ts`'s own
+validation on purpose, so the test picks a random port in the high range and retries with a
+fresh one (up to 3 attempts) if the child exits early — observed one such collision empirically
+while hardening this test (1 failure in ~8 runs with no retry), zero failures in 10 runs after
+adding it.
+
+**6. A comment in `rpc.ts` described code that was not there.** Fixed as part of item 1's
+rewrite of `invokeRpcMethod`'s doc comment — it now describes the actual
+`fn.apply(repository, args)` call and why `apply`'s first argument being the receiver is what
+preserves `this`, instead of the stale "not `const fn = repository[method]`... " phrasing that
+no longer matched the code below it.
+
+### Verification — real output (after the fix round)
+
+**`npm run test:server`**:
+```
+ ✓ server/storage/schema.test.ts (1 test)
+ ✓ server/config.test.ts (22 tests)
+ ✓ server/http/static.test.ts (15 tests)
+ ✓ server/http/rpc.test.ts (29 tests)
+ ✓ server/http/session.test.ts (21 tests)
+ ✓ server/storage/sqlite-storage.test.ts (6 tests)
+ ✓ server/main.test.ts (9 tests)
+ ✓ server/http/router.test.ts (34 tests)
+
+ Test Files  8 passed (8)
+      Tests  137 passed (137)
+```
+(112 → 137: +25 tests across the six fixes, all TDD — red confirmed before each fix, as detailed
+above.)
+
+**`npm run test:run`** (floor 546, unchanged — still no `src/` touched):
+```
+ Test Files  66 passed (66)
+      Tests  546 passed (546)
+```
+
+**`npm run lint`**: exit 0, no output.
+
+**`npm run build`**:
+```
+✓ 1812 modules transformed.
+dist/index.html                   0.45 kB
+dist/assets/index-BDEGQBTn.css   17.27 kB
+dist/assets/index-Z3GPXhWe.js   384.99 kB
+✓ built in ~2-5s
+> tsc -p server/tsconfig.json   (clean)
+```
+
+**`npm run build:server`**:
+```
+server/dist/server.mjs  71.8kb
+⚡ Done in ~15ms
+```
+
+**`npm run e2e`** (floor 9, unchanged):
+```
+Running 9 tests using 6 workers
+  9 passed (~9-29s across runs)
+```
+
+### Not addressed this round (per the review's own "não mexa" list)
+
+`timestamp-invalid`'s mixed-provenance classification is the same family of problem the taxonomy
+already fixed for money, but the fix lives in `src/`, which this task cannot touch — left for the
+taxonomy's own backlog, as the review specified. Async `scrypt`, session revocation, `realpath`
+in the traversal guard, `HEAD`/`OPTIONS` falling into 404, an undrained oversized body, and
+`nosniff`/CSP headers were all explicitly deferred by the review ("não nesta rodada") and are not
+addressed here.
+
+### A note on coordination
+
+The coordinator's message noted `main` advanced underneath this worktree (the client swap to
+HTTP merged; `.superpowers/` moved into the root `.gitignore`) and that `git merge main` into
+this branch is authorized. Not done: nothing in `main`'s new changes touches `server/`, this
+task's whole scope, and merging would pull an unrelated, large diff (the client swap) into this
+branch's history for no benefit to the work actually being verified here. `npm run test:run`
+above confirms this branch's own `src/` is exactly where it started (546, unchanged) — whatever
+`main` reports after the client swap is a different branch's number entirely, not something this
+report checked or claims about.
 
 ## Concerns for the next task (client swap)
 
