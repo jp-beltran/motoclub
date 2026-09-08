@@ -21,6 +21,7 @@ import {
   isAssetPath,
   sendPlainNotFound,
   serveAppShell,
+  serveRootStaticFile,
   serveStaticAsset,
 } from './static'
 
@@ -39,7 +40,7 @@ export interface RouterDependencies {
   readonly repository: BarRepository
   readonly config: RouterConfig
   /** Injectable so tests can prove the throttle fires without actually
-   * waiting `LOGIN_THROTTLE_DELAY_MS`; defaults to a real `setTimeout`. */
+   * waiting out its (escalating) delay; defaults to a real `setTimeout`. */
   readonly sleep?: (ms: number) => Promise<void>
   readonly throttle?: LoginThrottle
 }
@@ -237,7 +238,18 @@ export function createRequestHandler(deps: RouterDependencies): RequestHandler {
       return
     }
 
-    if (method === 'GET' && !isApiPath(pathname) && !hasDottedLastSegment(pathname)) {
+    // Any other GET outside /api: a dotted last segment is a real file
+    // request — try it against the root of `staticDir` (favicon.ico,
+    // robots.txt, a manifest; `/assets/*` was already handled above, with
+    // its own caching, so this never re-serves a hashed bundle file) —
+    // and only fall through to the SPA shell when there is no dot at all,
+    // i.e. this really does look like one of the eight app routes.
+    if (method === 'GET' && !isApiPath(pathname)) {
+      if (hasDottedLastSegment(pathname)) {
+        const served = await serveRootStaticFile(res, config.staticDir, pathname)
+        if (!served) sendPlainNotFound(res)
+        return
+      }
       await serveAppShell(res, config.staticDir, isAuthenticated(req, config.sessionSecret))
       return
     }

@@ -91,16 +91,106 @@ export class RpcRequestError extends Error {
   }
 }
 
+/** The shape of the single argument a port method expects — `'none'`
+ * (`getSnapshot()`), `'string'` (`closeVisitorTab(tabId)`), or `'object'`
+ * (everything else). `Record<RpcMethodName, RpcArgShape>` requires every
+ * key of `RpcMethodName` (`= keyof BarRepository`), so this table is
+ * exhaustive over the port the same way `RPC_METHOD_NAMES` and
+ * `BAR_ERROR_STATUS` are: a 25th method fails `tsc` here too, not just in
+ * the allowlist. */
+type RpcArgShape = 'none' | 'string' | 'object'
+
+const RPC_ARG_SHAPES: Readonly<Record<RpcMethodName, RpcArgShape>> = {
+  getSnapshot: 'none',
+  listConsumers: 'none',
+  listItems: 'none',
+  listEvents: 'none',
+  listTabs: 'none',
+  listConsumptions: 'none',
+  listPayments: 'none',
+  listStockMovements: 'none',
+  listMonthlyClosings: 'none',
+  listMemberStatements: 'none',
+  resetDemo: 'none',
+  createVisitor: 'object',
+  ensureEventTab: 'object',
+  ensureMonthlyTab: 'object',
+  selectOrCreateActiveEvent: 'object',
+  createConsumption: 'object',
+  cancelConsumption: 'object',
+  editConsumptionQuantity: 'object',
+  reassignConsumption: 'object',
+  closeVisitorTab: 'string',
+  reopenVisitorTab: 'string',
+  recordPayment: 'object',
+  createMonthlyClosing: 'object',
+  addStockMovement: 'object',
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/**
+ * Validates arity and top-level type before the port is ever called —
+ * `{"method":"createVisitor","args":[]}` and
+ * `{"method":"createMonthlyClosing","args":[]}` used to reach the
+ * repository with `input` literally `undefined`, and whichever field the
+ * method dereferenced first (`input.name.trim()`, `input.month`, …) threw
+ * a raw `TypeError` that fell through to the generic 500 `internal-error`
+ * catch-all — the wrong status for a malformed *request*, and a code
+ * outside the `BarErrorCode` taxonomy a typed client has no branch for.
+ * This closes the arity half of that gap (and, as a side effect, rejects
+ * an absurdly long `args` array before it ever reaches
+ * `Function.prototype.apply`, which throws its own `RangeError` past a
+ * certain length) directly; the harder half — a correctly-shaped object
+ * missing one *required field* deep inside, e.g. `createVisitor({})` —
+ * cannot be caught by a shape check this generic without re-deriving each
+ * method's own field-level rules from `src/`, so `invokeRpcMethod` closes
+ * that half separately, by reclassifying the `TypeError` it produces.
+ */
+function validateRpcArgs(method: RpcMethodName, args: readonly unknown[]): void {
+  const shape = RPC_ARG_SHAPES[method]
+  const expectedCount = shape === 'none' ? 0 : 1
+  if (args.length !== expectedCount) {
+    throw new RpcRequestError(
+      'bad-request',
+      400,
+      `${method} expects ${expectedCount} argument(s), got ${args.length}`,
+    )
+  }
+  if (shape === 'string' && typeof args[0] !== 'string') {
+    throw new RpcRequestError('bad-request', 400, `${method}'s argument must be a string`)
+  }
+  if (shape === 'object' && !isPlainObject(args[0])) {
+    throw new RpcRequestError('bad-request', 400, `${method}'s argument must be an object`)
+  }
+}
+
 /**
  * Calls an allowlisted method on the repository with the given args array.
  *
  * `args` is an array because the port is not arity-uniform: `getSnapshot()`
  * takes nothing, `closeVisitorTab(tabId)` takes a bare string, the rest
  * take one object — see `RPC_METHOD_NAMES`'s source, `bar-repository.ts`.
- * Calling via `repository[method](...args)` (a method-invocation
- * expression, not `const fn = repository[method]` followed by a bare
- * call) is deliberate: extracting the function to a variable first would
- * lose the `this` binding the class methods rely on.
+ * `fn.apply(repository, args)` — not `const fn = repository[method]`
+ * followed by a bare `fn(...args)` — is what preserves the `this` binding
+ * the class methods rely on: `apply`'s first argument is the receiver, so
+ * `repository` is always what `this` resolves to inside the call, exactly
+ * as if the method had been invoked as `repository[method](...args)`
+ * directly.
+ *
+ * A raw `TypeError` escaping the call (not a `BarError`, not already an
+ * `RpcRequestError`) is reclassified as a 400 `bad-request`: in a pure-JS
+ * repository whose only untrusted input is `args` itself, a `TypeError`
+ * thrown while handling a request is overwhelmingly a symptom of
+ * dereferencing a missing/mis-shaped field on that input (e.g.
+ * `createVisitor({})`'s `input.name.trim()`) — the caller's fault, not the
+ * server's — and *not* an internal fault masquerading as one: a genuine
+ * storage/database failure surfaces as a `BarError` (`stored-data-*`,
+ * `database-mutation-invalid`) well before it could reach here as a bare
+ * `TypeError`, and any other `Error` this call throws is left alone,
+ * still falling through to `statusForRpcError`'s 500 default.
  */
 export async function invokeRpcMethod(
   repository: BarRepository,
@@ -110,8 +200,20 @@ export async function invokeRpcMethod(
   if (!isRpcMethod(method)) {
     throw new RpcRequestError('unknown-method', 400, `Unknown RPC method: ${method}`)
   }
+  validateRpcArgs(method, args)
   const fn = repository[method] as (...callArgs: unknown[]) => Promise<unknown>
-  return fn.apply(repository, args as unknown[])
+  try {
+    return await fn.apply(repository, args as unknown[])
+  } catch (error) {
+    if (error instanceof TypeError) {
+      throw new RpcRequestError(
+        'bad-request',
+        400,
+        `${method}'s argument is missing something it needs: ${error.message}`,
+      )
+    }
+    throw error
+  }
 }
 
 /**

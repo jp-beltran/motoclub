@@ -1,9 +1,13 @@
+import { execFileSync, fork } from 'node:child_process'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 import { hashPin } from './http/session'
 import { bootServer, resolveDistDirFromBundleDir, shutdown, type BootedServer } from './main'
+
+const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 
 const PIN = '4242'
 const PIN_HASH = hashPin(PIN)
@@ -169,4 +173,163 @@ describe('shutdown', () => {
     // the in-flight request completed.
     expect(() => instance.driver.get('SELECT 1 as one')).toThrow()
   })
+
+  it('has an upper bound: resolves within its timeout even if a request never finishes', async () => {
+    const { baseUrl, instance } = await startBootedServer()
+    const cookie = await login(baseUrl)
+
+    let requestStarted: () => void = () => {}
+    const requestStartedPromise = new Promise<void>((resolve) => {
+      requestStarted = resolve
+    })
+    // Deliberately never resolves — a handler stuck forever (a bug, a
+    // hung downstream call) must not hold `systemctl restart motoclub`
+    // hostage until systemd's own SIGKILL timeout, whatever that happens
+    // to be configured as.
+    instance.repository.getSnapshot = async () => {
+      requestStarted()
+      return new Promise<never>(() => {})
+    }
+
+    const hangingRequest = fetch(`${baseUrl}/api/snapshot`, {
+      headers: { Cookie: cookie },
+    }).catch(() => undefined)
+    await requestStartedPromise
+
+    const startedAt = Date.now()
+    await shutdown(instance.server, instance.driver, 100)
+    expect(Date.now() - startedAt).toBeLessThan(1000)
+    expect(() => instance.driver.get('SELECT 1 as one')).toThrow()
+
+    booted = undefined
+    void hangingRequest
+  })
 })
+
+/**
+ * `shutdown()` above is well covered directly, but the actual wiring —
+ * `process.on('SIGTERM', ...) -> shutdown() -> process.exit(0)` in
+ * `installShutdownHandlers` — is not exercised by any of those tests,
+ * since calling it for real would register a signal handler on *this*
+ * process (the test runner), not just "the server under test". The only
+ * way to drive the real handler with a real signal, without touching the
+ * runner's own process, is to run it in a genuinely separate process: this
+ * forks the actual built bundle (not `server/main.ts` directly — its
+ * `src/` imports are extensionless and Node's ESM loader cannot resolve
+ * them unbundled, the same reason `readSchemaSql`/`SCHEMA_SQL` exist) and
+ * sends it a real `SIGTERM`.
+ */
+describe('installShutdownHandlers (real SIGTERM against the built bundle)', () => {
+  it('exits with code 0 only after logging the shutdown message', async () => {
+    // Build fresh so this test does not depend on some earlier `npm run
+    // build:server` having already been run, or on a stale artifact.
+    execFileSync(
+      'npx',
+      [
+        'esbuild',
+        'server/main.ts',
+        '--bundle',
+        '--platform=node',
+        '--format=esm',
+        '--target=node22',
+        '--outfile=server/dist/server.mjs',
+      ],
+      { cwd: REPO_ROOT, stdio: 'ignore' },
+    )
+
+    workDir = mkdtempSync(join(tmpdir(), 'main-fork-test-'))
+    const dbPath = join(workDir, 'bar.sqlite3')
+    const staticDir = join(workDir, 'dist')
+    mkdirSync(staticDir, { recursive: true })
+    writeFileSync(join(staticDir, 'index.html'), '<!doctype html><title>App</title>')
+
+    // `BAR_PORT=0` (the usual "let the OS pick an ephemeral port" trick
+    // this suite otherwise relies on) is refused by `config.ts`'s own
+    // validation, on purpose — it is not a real TCP port. This test never
+    // needs to actually connect to the child over HTTP, so a fixed port
+    // picked at random from the high range is enough; retried with a
+    // fresh port on the rare chance of a real collision, so this test's
+    // own flakiness budget is not "however often two random ports in a
+    // 10000-wide range happen to collide."
+    const { child, stdoutRef } = await forkServerAndWaitForListening({
+      BAR_DB_PATH: dbPath,
+      BAR_PIN_HASH: PIN_HASH,
+      BAR_SESSION_SECRET: SESSION_SECRET,
+      BAR_HOST: '127.0.0.1',
+      BAR_STATIC_DIR: staticDir,
+      TZ: 'America/Sao_Paulo',
+    })
+
+    const exitPromise = new Promise<number | null>((resolve) => {
+      child.once('exit', (code) => resolve(code))
+    })
+
+    child.kill('SIGTERM')
+    const code = await exitPromise
+
+    expect(code).toBe(0)
+    expect(stdoutRef.value).toContain('Received SIGTERM, shutting down')
+  }, 15000)
+})
+
+interface ForkedServer {
+  readonly child: ReturnType<typeof fork>
+  readonly stdoutRef: { value: string }
+}
+
+/** Forks `server/dist/server.mjs` with a randomly-chosen port, retrying
+ * with a fresh port if the child exits before logging "listening on"
+ * (the observable symptom of a port collision, among other early-exit
+ * causes) — up to a few attempts, so this stays a real, rare-flake-free
+ * end-to-end check rather than something that occasionally fails for a
+ * reason unrelated to what it is testing. */
+async function forkServerAndWaitForListening(
+  env: Record<string, string>,
+  attemptsLeft = 3,
+): Promise<ForkedServer> {
+  const port = 40000 + Math.floor(Math.random() * 10000)
+  const child = fork(join(REPO_ROOT, 'server/dist/server.mjs'), [], {
+    cwd: REPO_ROOT,
+    env: { ...process.env, ...env, BAR_PORT: String(port) },
+    stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
+  })
+
+  const stdoutRef = { value: '' }
+  let stderr = ''
+  child.stdout?.on('data', (chunk: Buffer) => {
+    stdoutRef.value += chunk.toString()
+  })
+  child.stderr?.on('data', (chunk: Buffer) => {
+    stderr += chunk.toString()
+  })
+
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const startupTimer = setTimeout(
+        () => reject(new Error(`server did not start in time; stdout: ${stdoutRef.value}\nstderr: ${stderr}`)),
+        8000,
+      )
+      const onData = (chunk: Buffer): void => {
+        if (chunk.toString().includes('listening on')) {
+          clearTimeout(startupTimer)
+          child.stdout?.off('data', onData)
+          resolve()
+        }
+      }
+      child.stdout?.on('data', onData)
+      child.once('error', reject)
+      child.once('exit', (code) =>
+        reject(
+          new Error(
+            `child exited early with code ${code} on port ${port}\nstdout: ${stdoutRef.value}\nstderr: ${stderr}`,
+          ),
+        ),
+      )
+    })
+  } catch (error) {
+    if (attemptsLeft <= 1) throw error
+    return forkServerAndWaitForListening(env, attemptsLeft - 1)
+  }
+
+  return { child, stdoutRef }
+}
