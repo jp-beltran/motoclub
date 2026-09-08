@@ -83,10 +83,11 @@ export function resolveStaticAssetPath(staticDir: string, requestPath: string): 
  * attempt" from "file not found" in the response, so a probe learns
  * nothing either way.
  */
-export async function serveStaticAsset(
+async function sendFileIfPresent(
   res: ServerResponse,
   staticDir: string,
   pathname: string,
+  cacheControl: string,
 ): Promise<boolean> {
   const resolved = resolveStaticAssetPath(staticDir, pathname)
   if (!resolved) return false
@@ -98,12 +99,46 @@ export async function serveStaticAsset(
   }
   res.writeHead(200, {
     'Content-Type': contentTypeFor(resolved),
-    // Vite's filenames are content-hashed: a given URL's bytes never
-    // change, so caching forever is safe and a cheap win on a slow APU.
-    'Cache-Control': 'public, max-age=31536000, immutable',
+    'Cache-Control': cacheControl,
   })
   res.end(data)
   return true
+}
+
+export async function serveStaticAsset(
+  res: ServerResponse,
+  staticDir: string,
+  pathname: string,
+): Promise<boolean> {
+  // Vite's filenames are content-hashed: a given URL's bytes never
+  // change, so caching forever is safe and a cheap win on a slow APU.
+  return sendFileIfPresent(res, staticDir, pathname, 'public, max-age=31536000, immutable')
+}
+
+/**
+ * A file requested directly at the root of `dist/` — `favicon.ico`,
+ * `robots.txt`, a web app manifest — that is *not* under `/assets/*` and
+ * so gets none of that path's content-hash guarantee. `isAssetPath` and
+ * the SPA fallback used to be the only two branches the router had for a
+ * dotted-last-segment GET, which meant any such file at the build root
+ * silently 404'd; this is the third branch, reusing the exact same
+ * traversal-guarded resolver as `serveStaticAsset` — the only difference
+ * is caching.
+ *
+ * `no-cache` (not `no-store`, and deliberately not the year-long
+ * `immutable` value `/assets/*` gets): these filenames are stable across
+ * deploys and safe to keep in the browser's cache, but — unlike a hashed
+ * bundle file — their *bytes* can change on the exact same URL. Without
+ * ETag/Last-Modified support here, `no-cache` (always revalidate with the
+ * server before reusing a cached copy) is the conservative choice that
+ * cannot serve a stale favicon or manifest for a year.
+ */
+export async function serveRootStaticFile(
+  res: ServerResponse,
+  staticDir: string,
+  pathname: string,
+): Promise<boolean> {
+  return sendFileIfPresent(res, staticDir, pathname, 'no-cache')
 }
 
 /**

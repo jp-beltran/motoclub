@@ -9,7 +9,7 @@ import { LocalBarRepository } from '../../src/features/bar/infrastructure/local-
 import { openNodeSqliteDriver, type SqlDriver } from '../storage/driver'
 import { SCHEMA_SQL } from '../storage/schema'
 import { SqliteStorage } from '../storage/sqlite-storage'
-import { LOGIN_FAILURE_THRESHOLD, LOGIN_THROTTLE_DELAY_MS, hashPin } from './session'
+import { LOGIN_DELAY_STEP_MS, LOGIN_FAILURE_THRESHOLD, hashPin } from './session'
 import { createRequestHandler } from './router'
 
 const PIN = '4242'
@@ -32,6 +32,33 @@ function corruptStoredDatabase(driver: SqlDriver): void {
   )
 }
 
+/** A genuinely empty (but valid) database — no demo seed, so no active
+ * event either. Used to reproduce `selectOrCreateActiveEvent([{}])`'s
+ * 500 specifically in the branch where there is no active event to
+ * short-circuit into before `input.name` is ever touched. */
+const EMPTY_DATABASE_ENVELOPE = JSON.stringify({
+  version: 1,
+  data: {
+    consumers: [],
+    items: [],
+    events: [],
+    tabs: [],
+    consumptions: [],
+    payments: [],
+    stockMovements: [],
+    monthlyClosings: [],
+    memberStatements: [],
+  },
+})
+
+function seedEmptyDatabase(driver: SqlDriver): void {
+  driver.run(
+    `INSERT INTO kv (key, value, updated_at) VALUES ('motoclub:bar-database', ?, datetime('now'))
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+    [EMPTY_DATABASE_ENVELOPE],
+  )
+}
+
 async function startTestServer(): Promise<TestServer> {
   const workDir = mkdtempSync(join(tmpdir(), 'router-test-'))
   const dbPath = join(workDir, 'bar.sqlite3')
@@ -42,6 +69,7 @@ async function startTestServer(): Promise<TestServer> {
     '<!doctype html><title>App</title><div id="root">real-app-shell</div>',
   )
   writeFileSync(join(staticDir, 'assets', 'app.js'), 'console.log("app")')
+  writeFileSync(join(staticDir, 'favicon.ico'), 'fake-icon-bytes')
 
   const driver = await openNodeSqliteDriver(dbPath)
   driver.exec(SCHEMA_SQL)
@@ -159,7 +187,7 @@ describe('auth gate', () => {
     expect(instance.sleep).not.toHaveBeenCalled()
 
     await login(instance.baseUrl, '0000')
-    expect(instance.sleep).toHaveBeenCalledWith(LOGIN_THROTTLE_DELAY_MS)
+    expect(instance.sleep).toHaveBeenCalledWith(LOGIN_FAILURE_THRESHOLD * LOGIN_DELAY_STEP_MS)
   })
 
   it('resets the throttle after a successful login', async () => {
@@ -338,6 +366,65 @@ describe('RPC allowlist', () => {
   })
 })
 
+describe('malformed RPC arguments end to end (real repository, real HTTP) — a 400, never a 500', () => {
+  it('createVisitor([]) is 400, not 500', async () => {
+    instance = await startTestServer()
+    const { cookie } = await login(instance.baseUrl, PIN)
+    const result = await rpc(instance.baseUrl, cookie, 'createVisitor', [])
+    expect(result.status).toBe(400)
+    expect(result.body.error?.code).toBe('bad-request')
+  })
+
+  it('createVisitor([{}]) — a correctly-shaped object missing the required field — is 400, not 500', async () => {
+    instance = await startTestServer()
+    const { cookie } = await login(instance.baseUrl, PIN)
+    const result = await rpc(instance.baseUrl, cookie, 'createVisitor', [{}])
+    expect(result.status).toBe(400)
+    expect(result.body.error?.code).toBe('bad-request')
+  })
+
+  it('createMonthlyClosing([]) is 400, not 500', async () => {
+    instance = await startTestServer()
+    const { cookie } = await login(instance.baseUrl, PIN)
+    const result = await rpc(instance.baseUrl, cookie, 'createMonthlyClosing', [])
+    expect(result.status).toBe(400)
+    expect(result.body.error?.code).toBe('bad-request')
+  })
+
+  it('addStockMovement([]) is 400, not 500', async () => {
+    instance = await startTestServer()
+    const { cookie } = await login(instance.baseUrl, PIN)
+    const result = await rpc(instance.baseUrl, cookie, 'addStockMovement', [])
+    expect(result.status).toBe(400)
+    expect(result.body.error?.code).toBe('bad-request')
+  })
+
+  it('selectOrCreateActiveEvent([{}]) with no active event is 400, not 500', async () => {
+    instance = await startTestServer()
+    seedEmptyDatabase(instance.driver)
+    const { cookie } = await login(instance.baseUrl, PIN)
+    const result = await rpc(instance.baseUrl, cookie, 'selectOrCreateActiveEvent', [{}])
+    expect(result.status).toBe(400)
+    expect(result.body.error?.code).toBe('bad-request')
+  })
+
+  it('closeVisitorTab([]) is now consistently 400 (previously an accidental 422)', async () => {
+    instance = await startTestServer()
+    const { cookie } = await login(instance.baseUrl, PIN)
+    const result = await rpc(instance.baseUrl, cookie, 'closeVisitorTab', [])
+    expect(result.status).toBe(400)
+    expect(result.body.error?.code).toBe('bad-request')
+  })
+
+  it('recordPayment([{}]) still reaches the domain guard and answers 422 (unchanged by this fix)', async () => {
+    instance = await startTestServer()
+    const { cookie } = await login(instance.baseUrl, PIN)
+    const result = await rpc(instance.baseUrl, cookie, 'recordPayment', [{}])
+    expect(result.status).toBe(422)
+    expect(result.body.error?.code).toBe('money-amount-not-positive')
+  })
+})
+
 describe('static files and SPA fallback', () => {
   it('serves /assets/<file> ungated, with immutable caching', async () => {
     instance = await startTestServer()
@@ -376,9 +463,22 @@ describe('static files and SPA fallback', () => {
     expect(body).toEqual({ ok: false, error: { code: 'not-found' } })
   })
 
-  it('an unknown non-api route with a dotted last segment is a plain 404', async () => {
+  it('serves a root-level static file that exists in dist/ (e.g. favicon.ico), ungated', async () => {
     instance = await startTestServer()
     const response = await fetch(`${instance.baseUrl}/favicon.ico`)
+    expect(response.status).toBe(200)
+    expect(await response.text()).toBe('fake-icon-bytes')
+  })
+
+  it('root-level static files are not given the /assets/* immutable caching — they are not content-hashed', async () => {
+    instance = await startTestServer()
+    const response = await fetch(`${instance.baseUrl}/favicon.ico`)
+    expect(response.headers.get('cache-control')).not.toMatch(/immutable/)
+  })
+
+  it('a dotted-last-segment path with no matching file anywhere in dist/ is still a plain 404', async () => {
+    instance = await startTestServer()
+    const response = await fetch(`${instance.baseUrl}/this-file-does-not-exist.ico`)
     expect(response.status).toBe(404)
     expect(response.headers.get('content-type')).toMatch(/text\/plain/)
   })
