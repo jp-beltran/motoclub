@@ -14,7 +14,8 @@
     "test:run": "vitest run",
     "test:server": "vitest run --config server/vitest.config.ts",
     "test:scripts": "node --test scripts/test/*.test.mjs && bash scripts/test/version.test.sh && bash scripts/test/install-lib.test.sh && bash scripts/test/restore.test.sh",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "publish:producao": "bash scripts/publish-producao.sh"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.85.5",
