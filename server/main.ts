@@ -187,15 +187,45 @@ export async function bootServer(config: ServerConfig): Promise<BootedServer> {
  * repeating the call every 50ms until `close()`'s callback fires, to catch
  * exactly that connection as soon as it goes idle instead of waiting out
  * whatever timeout the client or OS eventually applies.
+ *
+ * `timeoutMs` bounds all of the above: a request that never resolves (a
+ * bug, a downstream call that hangs) is still "in flight" as far as
+ * `close()` is concerned forever, and without a limit this promise — and
+ * therefore `systemctl restart motoclub` — would simply never return,
+ * until systemd's own SIGKILL timeout (not this code's to configure)
+ * eventually ends it uncleanly. After `timeoutMs`, `closeAllConnections()`
+ * — unlike `closeIdleConnections()`, this forcibly destroys a connection
+ * mid-request too — runs, and `finish()` is called directly right after it
+ * rather than only trusting `close()`'s own callback to react to the
+ * now-empty connection set on its own schedule. A `settled` guard makes
+ * the two paths (the graceful one and this forced one) race safely
+ * without ever closing the driver twice, whichever gets there first.
  */
-export function shutdown(server: http.Server, driver: SqlDriver): Promise<void> {
+export const SHUTDOWN_TIMEOUT_MS = 5_000
+
+export function shutdown(
+  server: http.Server,
+  driver: SqlDriver,
+  timeoutMs: number = SHUTDOWN_TIMEOUT_MS,
+): Promise<void> {
   return new Promise((resolve) => {
-    const pollIdleConnections = setInterval(() => server.closeIdleConnections(), 50)
-    server.close(() => {
+    let settled = false
+    const finish = (): void => {
+      if (settled) return
+      settled = true
       clearInterval(pollIdleConnections)
+      clearTimeout(forceCloseTimer)
       driver.close()
       resolve()
-    })
+    }
+
+    const pollIdleConnections = setInterval(() => server.closeIdleConnections(), 50)
+    const forceCloseTimer = setTimeout(() => {
+      server.closeAllConnections()
+      finish()
+    }, timeoutMs)
+
+    server.close(finish)
     server.closeIdleConnections()
   })
 }
