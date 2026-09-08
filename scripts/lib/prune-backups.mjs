@@ -51,12 +51,19 @@ export function isoWeekKey(date) {
 /**
  * Extrai a data de um nome de arquivo de backup no formato
  * bar-YYYYMMDD-HHMMSS.sqlite3. Retorna null se não casar.
+ *
+ * Construído em hora LOCAL, não UTC — de propósito: formatBackupName()
+ * (abaixo) grava os dígitos usando os acessores locais
+ * (getFullYear/getMonth/...), então reconstruir com Date.UTC() tratava os
+ * mesmos dígitos como se fossem UTC, introduzindo um desvio de -03:00
+ * (o fuso fixo deste projeto) toda vez que uma data era reconstruída a
+ * partir do nome do arquivo.
  */
 export function parseBackupDate(name) {
   const m = /^bar-(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})\.sqlite3$/.exec(name);
   if (!m) return null;
   const [, y, mo, d, h, mi, s] = m;
-  return new Date(Date.UTC(Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi), Number(s)));
+  return new Date(Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi), Number(s));
 }
 
 /** Formata a hora atual (local) no padrão de nome de arquivo de backup. */

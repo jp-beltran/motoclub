@@ -16,8 +16,19 @@ RestartSec=2
 # ler/escrever o banco em ~/.local/share/motoclub e ler os segredos em
 # ~/.config/motoclub. Nada disso restringe rede porque o servidor já
 # liga só em 127.0.0.1 por padrão (BAR_HOST).
+#
+# Sem PrivateTmp=true de propósito — medido, não suposto, em systemd 255
+# (255.4-1ubuntu8.17, a mesma base do Ubuntu 24.04 que o Mint 22 usa):
+# numa unidade de USUÁRIO com kernel.apparmor_restrict_unprivileged_userns=1
+# (padrão do Ubuntu 24.04/Mint 22), o systemd não consegue montar o
+# namespace que a opção precisa e a IGNORA em silêncio — a unidade sobe
+# normalmente, só que sem o isolamento que a linha promete. Não é um risco
+# de a unidade falhar (ela não falha); é a opção não fazer nada enquanto
+# parece endurecimento para quem lê depois. Numa máquina localhost,
+# monousuário, sem rede, ela também não compraria proteção real mesmo se
+# funcionasse — o app já não expõe nada fora de 127.0.0.1 — então a
+# omitimos em vez de manter uma linha que engana.
 NoNewPrivileges=true
-PrivateTmp=true
 
 [Install]
 WantedBy=default.target

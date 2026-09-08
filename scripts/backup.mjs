@@ -92,7 +92,8 @@ async function main() {
       console.log('[dry-run] nenhum backup precisaria ser removido pela poda');
     }
     if (usbPath) {
-      console.log(`[dry-run] copiaria o backup mais novo para o pendrive em ${usbPath}`);
+      console.log(`[dry-run] copiaria o backup mais novo para o pendrive em ${usbPath}, reverificaria integrity_check na cópia,`);
+      console.log('[dry-run] e podaria o pendrive com a mesma política (14 diários + 8 semanais)');
     } else {
       console.log('[dry-run] nenhum pendrive configurado (BAR_BACKUP_USB_PATH) — copiaria só localmente');
     }
@@ -132,26 +133,71 @@ async function main() {
     }
   }
 
+  // Uma cópia configurada que falha é, por definição, um backup que
+  // deixou de existir fora desta máquina (o único lugar que sobrevive se
+  // o HD morrer) — isso precisa sair diferente de zero e NUNCA aparecer
+  // prefixado como "backup ok", mesmo que o arquivo local esteja
+  // perfeito. O timer e o doctor.sh dependem desse sinal para notar.
+  let usbOk = true;
   let usbNote = 'sem pendrive configurado';
   if (usbPath) {
     if (existsSync(usbPath)) {
+      const usbDestPath = path.join(usbPath, backupName);
       try {
-        copyFileSync(destPath, path.join(usbPath, backupName));
-        usbNote = `copiado para ${usbPath}`;
+        copyFileSync(destPath, usbDestPath);
+        // Reverifica a cópia no pendrive: copyFileSync não garante fsync
+        // em mídia removível, e este é exatamente o arquivo que vai ser
+        // buscado no dia em que o disco interno morrer — vale conferir
+        // que chegou inteiro, não só que a chamada não lançou erro.
+        const usbCheck = checkIntegrity(usbDestPath);
+        if (!usbCheck.ok) {
+          usbOk = false;
+          usbNote = `FALHOU: cópia no pendrive não passou no integrity_check (${usbCheck.detail})`;
+          try {
+            unlinkSync(usbDestPath);
+          } catch {
+            // segue o erro principal mesmo se a remoção falhar
+          }
+        } else {
+          usbNote = `copiado e verificado no pendrive em ${usbPath}`;
+          // Poda o pendrive com a MESMA política (14 diários + 8
+          // semanais) do backup local — sem isso ele enche em ~um ano de
+          // uso diário, e toda cópia seguinte passa a falhar em
+          // silêncio para sempre (o "existsSync(usbPath)" acima continua
+          // true, só o disco fica sem espaço).
+          const usbBackups = listExistingBackups(usbPath);
+          const { remove: usbToRemove } = planPruning(usbBackups, { dailyCount: 14, weeklyCount: 8 });
+          for (const name of usbToRemove) {
+            try {
+              rmSync(path.join(usbPath, name), { force: true });
+            } catch (err) {
+              process.stderr.write(`aviso: não consegui remover backup antigo do pendrive ${name}: ${err.message}\n`);
+            }
+          }
+        }
       } catch (err) {
+        usbOk = false;
         usbNote = `FALHOU ao copiar para o pendrive (${err.message})`;
       }
     } else {
+      usbOk = false;
       usbNote = `FALHOU: pendrive não está montado em ${usbPath}`;
     }
   }
 
   const size = statSync(destPath).size;
   const elapsedMs = Date.now() - startedAt;
-  console.log(
-    `backup ok: ${backupName} (${formatBytes(size)}, integrity_check=ok, ` +
-      `podados ${toRemove.length}, ${usbNote}, ${elapsedMs}ms)`,
-  );
+  const summary = `${backupName} (${formatBytes(size)}, integrity_check=ok, podados ${toRemove.length}, ${usbNote}, ${elapsedMs}ms)`;
+  if (usbOk) {
+    console.log(`backup ok: ${summary}`);
+  } else {
+    // O backup LOCAL está bom (já passou integrity_check acima) e não é
+    // descartado — só a cópia para fora da máquina que deveria ter
+    // acontecido não aconteceu. Ainda assim isso é uma falha real: sai
+    // diferente de zero, e a linha não começa com "backup ok".
+    process.stderr.write(`backup local ok, mas o pendrive falhou: ${summary}\n`);
+    process.exitCode = 1;
+  }
 }
 
 main().catch((err) => {

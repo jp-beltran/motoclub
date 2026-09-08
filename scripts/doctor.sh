@@ -61,17 +61,37 @@ LOGIND_DROPIN_DIR="${MOTOCLUB_LOGIND_DROPIN_DIR:-/etc/systemd/logind.conf.d}"
 SERVICE_UNIT="motoclub.service"
 BACKUP_SERVICE_UNIT="motoclub-backup.service"
 BACKUP_TIMER_UNIT="motoclub-backup.timer"
-NODE_MAJOR_REQUIRED=22
+# node:sqlite só existe a partir do Node 22.5 — major>=22 sozinho não
+# basta (ver find_node abaixo).
+NODE_MIN_VERSION="22.5.0"
 
 # shellcheck source=lib/version.sh
 source "$SCRIPT_DIR/lib/version.sh"
+# shellcheck source=lib/xfce-power-props.sh
+source "$SCRIPT_DIR/lib/xfce-power-props.sh"
 
+# Só aceita um Node que realmente tenha node:sqlite (>= 22.5). Um node do
+# PATH mais antigo que isso não deve ser usado para checar o banco — na
+# melhor hipótese ele nem tem o módulo (e o processo morre com um erro
+# feio); na pior, dá um resultado que parece "corrompido" sem ser: o
+# ambiente é que está errado, não o banco.
 find_node() {
+  local candidate=""
   if [ -x "$NODE_LINK/bin/node" ]; then
-    echo "$NODE_LINK/bin/node"
+    candidate="$NODE_LINK/bin/node"
   elif command -v node >/dev/null 2>&1; then
-    command -v node
+    candidate="$(command -v node)"
   fi
+  [ -z "$candidate" ] && return 0
+
+  local candidate_version
+  candidate_version="$("$candidate" --version 2>/dev/null || true)"
+  if node_version_ge "$candidate_version" "$NODE_MIN_VERSION"; then
+    echo "$candidate"
+  fi
+  # Se a versão não serve, ecoa nada — quem chama (check_database) já
+  # trata NODE_BIN vazio como "não dá para checar", em vez de arriscar um
+  # falso "corrompido".
 }
 NODE_BIN="$(find_node)"
 
@@ -108,10 +128,13 @@ WARNS=0
 
 section() { echo; echo "== $* =="; }
 pass() { echo "  OK       $*"; }
+# Tudo no MESMO stream (stdout) — nunca stderr aqui. O valor deste comando
+# É a sua saída: "doctor.sh > diagnostico.txt" precisa capturar as linhas
+# FALHOU tanto quanto as OK, senão o arquivo fica só com o lado bonito.
 problem() {
-  echo "  FALHOU   $1" >&2
+  echo "  FALHOU   $1"
   if [ -n "${2:-}" ]; then
-    echo "           o que fazer: $2" >&2
+    echo "           o que fazer: $2"
   fi
   FAILS=$((FAILS + 1))
 }
@@ -139,18 +162,42 @@ check_node() {
 
   if [ ! -x "$NODE_LINK/bin/node" ]; then
     problem "Node não encontrado em $NODE_LINK/bin/node" \
-      "rode 'scripts/install.sh' para instalar o Node."
+      "rode '$SCRIPT_DIR/install.sh' para instalar o Node."
     return 0
   fi
 
   local version
   version="$("$NODE_LINK/bin/node" --version 2>/dev/null || true)"
-  if node_version_ok "$version" "$NODE_MAJOR_REQUIRED"; then
-    pass "Node $version em $NODE_LINK/bin/node (>= $NODE_MAJOR_REQUIRED)"
+  if node_version_ge "$version" "$NODE_MIN_VERSION"; then
+    pass "Node $version em $NODE_LINK/bin/node (>= $NODE_MIN_VERSION)"
   else
-    problem "Node em $NODE_LINK é $version, mais antigo que o exigido (>= $NODE_MAJOR_REQUIRED)" \
-      "rode 'scripts/install.sh' de novo para atualizar o Node."
+    problem "Node em $NODE_LINK é $version, mais antigo que o exigido (>= $NODE_MIN_VERSION; node:sqlite só existe a partir daí)" \
+      "rode '$SCRIPT_DIR/install.sh' de novo para atualizar o Node."
   fi
+}
+
+# --- 1b. Artefatos de build -----------------------------------------------------
+
+# O login (servido em "/" sem cookie) é uma página estática embutida no
+# próprio servidor — ela responde 200 sem nunca ler dist/. Por isso "curl /"
+# não prova que o front-end existe: um `git pull` na branch errada, um
+# `git clean -xdf`, ou um artefato não commitado passam por essa checagem
+# em silêncio, e o app vira tela branca depois de autenticar. Checamos os
+# artefatos diretamente, como install.sh já faz.
+check_artifacts() {
+  section "Artefatos de build ($HOME_DIR)"
+  if [ "$DRY_RUN" -eq 1 ]; then
+    plan "dist/index.html e server/dist/server.mjs existem" \
+      "test -f $HOME_DIR/dist/index.html && test -f $HOME_DIR/server/dist/server.mjs"
+    return 0
+  fi
+
+  if [ ! -f "$HOME_DIR/dist/index.html" ] || [ ! -f "$HOME_DIR/server/dist/server.mjs" ]; then
+    problem "não encontrei $HOME_DIR/dist/index.html e/ou $HOME_DIR/server/dist/server.mjs" \
+      "o build (front-end e servidor) é feito na máquina de desenvolvimento e chega aqui só por 'git pull' na branch de produção — confira se '$HOME_DIR' é o checkout certo e se você deu esse pull antes de continuar."
+    return 0
+  fi
+  pass "dist/index.html e server/dist/server.mjs presentes"
 }
 
 # --- 2. Arquivo de segredos -----------------------------------------------------
@@ -164,7 +211,7 @@ check_env_file() {
 
   if [ ! -f "$ENV_FILE" ]; then
     problem "arquivo de segredos não existe em $ENV_FILE" \
-      "rode 'scripts/install.sh' para criá-lo (ele vai pedir o PIN do bar)."
+      "rode '$SCRIPT_DIR/install.sh' para criá-lo (ele vai pedir o PIN do bar)."
     return 0
   fi
   pass "arquivo existe"
@@ -187,18 +234,18 @@ check_env_file() {
       pass "BAR_PIN_HASH presente e no formato esperado (scrypt\$salt\$hash)"
     else
       problem "BAR_PIN_HASH presente mas não está no formato scrypt\$salt\$hash" \
-        "apague '$ENV_FILE' e rode 'scripts/install.sh' de novo para recriar os segredos."
+        "apague '$ENV_FILE' e rode '$SCRIPT_DIR/install.sh' de novo para recriar os segredos (ele já reinicia o serviço no fim, então o valor novo passa a valer sem passo extra)."
     fi
   else
     problem "BAR_PIN_HASH ausente em $ENV_FILE" \
-      "apague '$ENV_FILE' e rode 'scripts/install.sh' de novo para recriar os segredos."
+      "apague '$ENV_FILE' e rode '$SCRIPT_DIR/install.sh' de novo para recriar os segredos (ele já reinicia o serviço no fim, então o valor novo passa a valer sem passo extra)."
   fi
 
   if [ -n "$session_secret" ]; then
     pass "BAR_SESSION_SECRET presente"
   else
     problem "BAR_SESSION_SECRET ausente em $ENV_FILE" \
-      "apague '$ENV_FILE' e rode 'scripts/install.sh' de novo para recriar os segredos."
+      "apague '$ENV_FILE' e rode '$SCRIPT_DIR/install.sh' de novo para recriar os segredos (ele já reinicia o serviço no fim, então o valor novo passa a valer sem passo extra)."
   fi
 }
 
@@ -213,7 +260,7 @@ check_database() {
 
   if [ ! -f "$DB_PATH" ]; then
     problem "banco não encontrado em $DB_PATH" \
-      "se o serviço nunca rodou ainda, inicie-o com 'systemctl --user start $SERVICE_UNIT'; se já rodou e o arquivo sumiu, restaure com 'scripts/restore.sh'."
+      "se o serviço nunca rodou ainda, inicie-o com 'systemctl --user start $SERVICE_UNIT'; se já rodou e o arquivo sumiu, restaure com '$SCRIPT_DIR/restore.sh'."
     return 0
   fi
   pass "arquivo existe"
@@ -223,13 +270,69 @@ check_database() {
     return 0
   fi
 
-  local result
+  # sqlite-check.mjs sai 0=ok, 1=corrompido, 2=não deu para verificar (ver
+  # o arquivo em si). O exit code, não o texto, é quem decide se a
+  # recomendação é "restaure agora" — um "não deu para verificar" não é
+  # evidência de corrupção, e recomendar restauração por causa disso
+  # manda um leigo mexer no banco (via restore.sh) sem necessidade.
+  local result exit_code
   result="$("$NODE_BIN" --no-warnings "$SCRIPT_DIR/lib/sqlite-check.mjs" "$DB_PATH" 2>/dev/null)"
-  if [ "$result" = "ok" ]; then
-    pass "PRAGMA integrity_check = ok"
+  exit_code=$?
+  case "$exit_code" in
+    0)
+      pass "PRAGMA integrity_check = ok"
+      ;;
+    2)
+      problem "não consegui verificar a integridade do banco: $result" \
+        "isto não é, por si só, evidência de corrupção — confira permissões e se o arquivo não mudou nesse meio-tempo antes de considerar restaurar."
+      ;;
+    *)
+      problem "PRAGMA integrity_check falhou: $result" \
+        "pare o serviço e restaure o backup mais recente com '$SCRIPT_DIR/restore.sh' — não continue usando um banco corrompido."
+      ;;
+  esac
+}
+
+# --- 3b. Histórico de versões ----------------------------------------------------
+
+# kv_history (escrita pelo servidor a cada gravação, lida/restaurada por
+# scripts/history.mjs) é a rede de segurança de "desfazer um toque
+# errado". Sem este check, um operador debugando uma noite perdida não
+# tem, pelo doctor.sh, como descobrir que essa ferramenta existe.
+check_history() {
+  section "Histórico de versões (kv_history)"
+  if [ "$DRY_RUN" -eq 1 ]; then
+    plan "tabela kv_history existe, quantas versões guarda, data da mais recente" \
+      "node scripts/lib/history-status.mjs $DB_PATH"
+    return 0
+  fi
+
+  if [ ! -f "$DB_PATH" ]; then
+    skip "banco não existe ainda — nada para reportar sobre o histórico (veja a seção 'Banco de dados' acima)"
+    return 0
+  fi
+  if [ -z "$NODE_BIN" ]; then
+    skip "não dá para checar o histórico sem Node — resolva a checagem de Node acima primeiro"
+    return 0
+  fi
+
+  local status_line exists count most_recent
+  status_line="$("$NODE_BIN" --no-warnings "$SCRIPT_DIR/lib/history-status.mjs" "$DB_PATH" 2>/dev/null)"
+  exists="$(echo "$status_line" | grep -oE 'exists=[01]' | cut -d= -f2)"
+  count="$(echo "$status_line" | grep -oE 'count=[0-9]+' | cut -d= -f2)"
+  most_recent="$(echo "$status_line" | sed -E 's/^.*mostRecent=(.*)$/\1/')"
+
+  if [ "$exists" != "1" ]; then
+    soft_warn "tabela kv_history não existe neste banco" \
+      "normal só se o banco foi criado antes do recurso de histórico existir; sem ela não há versões antigas para restaurar com '$SCRIPT_DIR/history.mjs'."
+    return 0
+  fi
+
+  if [ "${count:-0}" -eq 0 ]; then
+    soft_warn "kv_history existe mas ainda não tem nenhuma versão guardada" \
+      "normal logo após a instalação, antes do primeiro lançamento; toda gravação seguinte passa a registrar uma versão aqui."
   else
-    problem "PRAGMA integrity_check falhou: $result" \
-      "pare o serviço e restaure o backup mais recente com 'scripts/restore.sh' — não continue usando um banco corrompido."
+    pass "kv_history: $count versão(ões) guardada(s), mais recente em ${most_recent:--}"
   fi
 }
 
@@ -267,7 +370,19 @@ diagnose_service_failure() {
       hint="código de saída '${exit_code:-desconhecido}' (não classificado)."
       ;;
   esac
-  hint="$hint A mensagem exata está no journal (abaixo) ou em 'journalctl --user -u $SERVICE_UNIT -n 20'."
+
+  # Nomear o arquivo a corrigir não basta: a correção só vale depois de o
+  # processo reiniciar (EnvironmentFile só é lido no boot do processo), e
+  # com Restart=always + o StartLimitBurst padrão do systemd, uma unidade
+  # que falhou rápido demais várias vezes fica em "failed" travada — um
+  # "restart" direto nela não faz nada até "reset-failed" limpar esse
+  # estado. Sem isso, quem corrigir o env, rodar doctor de novo e ver o
+  # mesmo vermelho conclui (errado) que a correção não funcionou.
+  local restart_hint="depois de corrigir, rode: systemctl --user restart $SERVICE_UNIT"
+  if [ "$active" = "failed" ]; then
+    restart_hint="depois de corrigir, rode NESTA ORDEM: 'systemctl --user reset-failed $SERVICE_UNIT' (o systemd para de tentar sozinho depois de falhar rápido demais — sem isso um 'restart' direto pode não fazer nada) e só então 'systemctl --user restart $SERVICE_UNIT'"
+  fi
+  hint="$hint $restart_hint. A mensagem exata está no journal (abaixo) ou em 'journalctl --user -u $SERVICE_UNIT -n 20'."
 
   problem "$SERVICE_UNIT não está ativo (estado: ${active:-desconhecido})" "$hint"
 
@@ -275,8 +390,8 @@ diagnose_service_failure() {
     local tail
     tail="$(journalctl --user -u "$SERVICE_UNIT" -n 20 --no-pager 2>/dev/null || true)"
     if [ -n "$tail" ]; then
-      echo "           últimas linhas do journal:" >&2
-      echo "$tail" | sed 's/^/             /' >&2
+      echo "           últimas linhas do journal:"
+      echo "$tail" | sed 's/^/             /'
     fi
   fi
 }
@@ -284,7 +399,7 @@ diagnose_service_failure() {
 check_service() {
   section "Serviço ($SERVICE_UNIT)"
   if [ "$DRY_RUN" -eq 1 ]; then
-    plan "habilitado, ativo e respondendo em http://$BAR_HOST_EFFECTIVE:$BAR_PORT_EFFECTIVE/" \
+    plan "habilitado, ativo e respondendo em http://$BAR_HOST_EFFECTIVE:$BAR_PORT_EFFECTIVE/healthz" \
       "systemctl --user is-enabled/is-active/show $SERVICE_UNIT + journalctl --user -u $SERVICE_UNIT -n 20 + curl"
     return 0
   fi
@@ -313,10 +428,15 @@ check_service() {
   fi
 
   if command -v curl >/dev/null 2>&1; then
-    if curl -fsS --max-time 3 -o /dev/null "http://$BAR_HOST_EFFECTIVE:$BAR_PORT_EFFECTIVE/"; then
-      pass "respondendo em http://$BAR_HOST_EFFECTIVE:$BAR_PORT_EFFECTIVE/"
+    # "/healthz" e não "/": a raiz sem cookie devolve a página de login
+    # embutida no servidor, 200, sem nunca ler dist/ — não prova que o
+    # processo (nem os artefatos) estão realmente de pé. "/healthz" é
+    # ungated e é só isso que essa checagem quer confirmar; a checagem de
+    # artefatos, acima, cobre o dist/ separadamente.
+    if curl -fsS --max-time 3 -o /dev/null "http://$BAR_HOST_EFFECTIVE:$BAR_PORT_EFFECTIVE/healthz"; then
+      pass "processo respondendo (/healthz) em http://$BAR_HOST_EFFECTIVE:$BAR_PORT_EFFECTIVE/"
     else
-      problem "não respondeu em http://$BAR_HOST_EFFECTIVE:$BAR_PORT_EFFECTIVE/" \
+      problem "/healthz não respondeu em http://$BAR_HOST_EFFECTIVE:$BAR_PORT_EFFECTIVE/" \
         "confira 'journalctl --user -u $SERVICE_UNIT' e se BAR_PORT/BAR_HOST em $ENV_FILE batem com o esperado."
     fi
   else
@@ -354,7 +474,7 @@ check_backup_timer() {
   section "Timer de backup ($BACKUP_TIMER_UNIT)"
   if [ "$DRY_RUN" -eq 1 ]; then
     plan "timer ativo e a última execução do backup teve sucesso" \
-      "systemctl --user is-active $BACKUP_TIMER_UNIT + systemctl --user show $BACKUP_SERVICE_UNIT -p Result,LastTriggerUSec"
+      "systemctl --user is-active $BACKUP_TIMER_UNIT + journalctl --user -u $BACKUP_SERVICE_UNIT -n 1 + systemctl --user show $BACKUP_SERVICE_UNIT -p Result"
     return 0
   fi
 
@@ -372,9 +492,25 @@ check_backup_timer() {
       "rode: systemctl --user enable --now $BACKUP_TIMER_UNIT"
   fi
 
-  local last_trigger
-  last_trigger="$(systemctl --user show "$BACKUP_TIMER_UNIT" --property=LastTriggerUSec --value 2>/dev/null || true)"
-  if [ -z "$last_trigger" ] || [ "$last_trigger" = "0" ]; then
+  # "Já rodou alguma vez" não pode depender só do LastTriggerUSec do
+  # TIMER: um "systemctl start motoclub-backup.service" manual — que é
+  # exatamente o que install.sh faz, de propósito, para provar a cadeia de
+  # backup já na instalação — não passa pelo timer, e por isso não
+  # atualiza esse campo. Sem este ajuste, o doctor diria "o backup ainda
+  # não rodou nenhuma vez" segundos depois do próprio instalador ter
+  # acabado de dizer "primeiro backup gerado com sucesso" — uma
+  # contradição direta na cara de quem acabou de instalar. Em vez disso,
+  # perguntamos ao journal se existe qualquer execução registrada (e
+  # "Result" — que este ambiente confirmou ser 'success' mesmo para uma
+  # unidade que NUNCA rodou — não seria confiável sozinho para decidir isso).
+  local has_run=0
+  if command -v journalctl >/dev/null 2>&1; then
+    if journalctl --user -u "$BACKUP_SERVICE_UNIT" -n 1 --no-pager --quiet 2>/dev/null | grep -q .; then
+      has_run=1
+    fi
+  fi
+
+  if [ "$has_run" -eq 0 ]; then
     soft_warn "o backup ainda não rodou nenhuma vez" \
       "normal logo após a instalação; roda sozinho às 04:00, ou rode agora com 'systemctl --user start $BACKUP_SERVICE_UNIT'."
     return 0
@@ -432,7 +568,7 @@ check_power() {
     pass "logind: HandleLidSwitch=ignore configurado"
   else
     problem "logind não tem HandleLidSwitch=ignore configurado em $LOGIND_DROPIN_DIR nem em /etc/systemd/logind.conf" \
-      "rode 'scripts/install.sh' de novo, ou crie manualmente $LOGIND_DROPIN_DIR/motoclub.conf com [Login] / HandleLidSwitch=ignore / IdleAction=ignore, e reinicie."
+      "rode '$SCRIPT_DIR/install.sh' de novo, ou crie manualmente $LOGIND_DROPIN_DIR/motoclub.conf com [Login] / HandleLidSwitch=ignore / IdleAction=ignore, e reinicie."
   fi
 
   if ! command -v xfconf-query >/dev/null 2>&1; then
@@ -440,13 +576,24 @@ check_power() {
     return 0
   fi
 
-  local lid_ac
-  lid_ac="$(xfconf-query -c xfce4-power-manager -p /xfce4-power-manager/lid-action-on-ac 2>/dev/null || true)"
-  if [ "$lid_ac" = "0" ]; then
-    pass "XFCE: tampa fechada com notebook na tomada = nada fazer"
-  else
-    problem "XFCE: ação da tampa com notebook na tomada não está em 'nada fazer' (valor lido: '${lid_ac:-vazio}')" \
-      "abra Configurações > Gerenciador de Energia > Geral e ajuste 'Ao fechar a tampa' para 'Nada fazer', ou rode 'scripts/install.sh' de novo."
+  # Relê as MESMAS oito propriedades que install.sh escreve (scripts/lib/
+  # xfce-power-props.sh é a lista única de verdade) — reler só uma dava
+  # falsa sensação de segurança justamente na maior suposição não
+  # verificada desta entrega (os nomes de propriedade certos para a versão
+  # do xfce4-power-manager do Mint 22).
+  local xfce_ok=1
+  for entry in "${XFCE_POWER_PROPS[@]}"; do
+    split_xfce_prop_entry "$entry"
+    local current_value
+    current_value="$(xfconf-query -c xfce4-power-manager -p "$PROP" 2>/dev/null || true)"
+    if [ "$current_value" != "$PROP_VALUE" ]; then
+      xfce_ok=0
+      problem "XFCE: $PROP não está em '$PROP_VALUE' (valor lido: '${current_value:-vazio}')" \
+        "abra Configurações > Gerenciador de Energia e confira as opções de tampa/tela/suspensão, ou rode '$SCRIPT_DIR/install.sh' de novo."
+    fi
+  done
+  if [ "$xfce_ok" -eq 1 ]; then
+    pass "XFCE: as oito propriedades de energia estão como esperado (tela e tampa nunca suspendem)"
   fi
 }
 
@@ -461,7 +608,7 @@ check_backups() {
 
   if [ ! -d "$BACKUP_DIR" ]; then
     problem "diretório de backups não existe: $BACKUP_DIR" \
-      "rode 'scripts/install.sh' (ele cria o diretório) e depois 'systemctl --user start $BACKUP_SERVICE_UNIT'."
+      "rode '$SCRIPT_DIR/install.sh' (ele cria o diretório) e depois 'systemctl --user start $BACKUP_SERVICE_UNIT'."
     return 0
   fi
 
@@ -491,7 +638,7 @@ check_usb() {
   section "Pendrive de backup"
   if [ -z "$USB_PATH" ]; then
     soft_warn "nenhum pendrive configurado (BAR_BACKUP_USB_PATH não está em $ENV_FILE)" \
-      "os backups existem só no HD interno. Rode 'scripts/install.sh' de novo para configurar um pendrive."
+      "os backups existem só no HD interno. Rode '$SCRIPT_DIR/install.sh' de novo para configurar um pendrive."
     return 0
   fi
 
@@ -502,7 +649,7 @@ check_usb() {
 
   if [ ! -d "$USB_PATH" ]; then
     problem "pendrive configurado em $USB_PATH, mas o caminho não existe (não está montado?)" \
-      "conecte e monte o pendrive no caminho configurado, ou rode 'scripts/install.sh' de novo para atualizar o caminho."
+      "conecte e monte o pendrive no caminho configurado, ou rode '$SCRIPT_DIR/install.sh' de novo para atualizar o caminho."
     return 0
   fi
 
@@ -522,8 +669,10 @@ echo "Diagnóstico do Motoclub"
 echo "Checkout: $HOME_DIR"
 
 check_node
+check_artifacts
 check_env_file
 check_database
+check_history
 check_service
 check_linger
 check_backup_timer

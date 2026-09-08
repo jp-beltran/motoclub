@@ -61,18 +61,36 @@ test('mantém apenas um backup por semana ISO entre os semanais', () => {
   assert.equal(keptOld.length, 1, 'só um dos dois backups da mesma semana ISO deve sobreviver');
 });
 
-test('parseBackupDate extrai a data de um nome válido e rejeita nomes inválidos', () => {
+test('parseBackupDate extrai a data de um nome válido (em hora LOCAL) e rejeita nomes inválidos', () => {
+  // Acessores locais (getFullYear/getMonth/...), não UTC: formatBackupName
+  // grava os dígitos em hora local, e reconstruir com Date.UTC() (como o
+  // código fazia antes) introduzia um desvio de -03:00 toda vez que uma
+  // data era lida de volta a partir do nome do arquivo.
   const d = parseBackupDate('bar-20260903-040000.sqlite3');
   assert.ok(d instanceof Date);
-  assert.equal(d.getUTCFullYear(), 2026);
-  assert.equal(d.getUTCMonth(), 8); // setembro = índice 8
-  assert.equal(d.getUTCDate(), 3);
+  assert.equal(d.getFullYear(), 2026);
+  assert.equal(d.getMonth(), 8); // setembro = índice 8
+  assert.equal(d.getDate(), 3);
+  assert.equal(d.getHours(), 4);
+  assert.equal(d.getMinutes(), 0);
+  assert.equal(d.getSeconds(), 0);
   assert.equal(parseBackupDate('lixo.sqlite3'), null);
   assert.equal(parseBackupDate('bar-2026-09-03.sqlite3'), null);
 });
 
-test('formatBackupName produz um nome que parseBackupDate consegue ler de volta', () => {
+test('formatBackupName produz um nome que parseBackupDate lê de volta com os MESMOS valores locais', () => {
   const now = new Date(2026, 8, 3, 14, 5, 9); // horário local
   const name = formatBackupName(now);
   assert.match(name, /^bar-\d{8}-\d{6}\.sqlite3$/);
+
+  // O round-trip real (formatar -> reler) precisa devolver a mesma data
+  // local, não uma deslocada pelo fuso — é exatamente o bug que a
+  // inconsistência UTC/local introduzia.
+  const roundTripped = parseBackupDate(name);
+  assert.equal(roundTripped.getFullYear(), now.getFullYear());
+  assert.equal(roundTripped.getMonth(), now.getMonth());
+  assert.equal(roundTripped.getDate(), now.getDate());
+  assert.equal(roundTripped.getHours(), now.getHours());
+  assert.equal(roundTripped.getMinutes(), now.getMinutes());
+  assert.equal(roundTripped.getSeconds(), now.getSeconds());
 });
