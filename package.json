@@ -10,7 +10,7 @@
     "lint": "eslint .",
     "test": "vitest",
     "test:run": "vitest run",
-    "test:scripts": "node --test scripts/test/*.test.mjs && bash scripts/test/version.test.sh",
+    "test:scripts": "node --test scripts/test/*.test.mjs && bash scripts/test/version.test.sh && bash scripts/test/install-lib.test.sh && bash scripts/test/restore.test.sh",
     "e2e": "playwright test"
   },
   "dependencies": {

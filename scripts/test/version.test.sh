@@ -73,6 +73,14 @@ echo "parse_glibc_version"
 assert_eq "extrai versão do formato Ubuntu" "2.39" "$(parse_glibc_version 'ldd (Ubuntu GLIBC 2.39-0ubuntu8.3) 2.39')"
 assert_eq "extrai versão simples" "2.28" "$(parse_glibc_version 'ldd (GNU libc) 2.28')"
 
+echo "node_version_ge"
+assert_true "22.11.0 >= 22.5.0" node_version_ge "v22.11.0" "22.5.0"
+assert_true "22.5.0 >= 22.5.0 (igual)" node_version_ge "v22.5.0" "22.5.0"
+assert_false "22.4.9 >= 22.5.0 é falso (abaixo do mínimo do node:sqlite)" node_version_ge "v22.4.9" "22.5.0"
+assert_false "20.18.0 >= 22.5.0 é falso" node_version_ge "v20.18.0" "22.5.0"
+assert_true "24.0.0 >= 22.5.0" node_version_ge "v24.0.0" "22.5.0"
+assert_false "string vazia (node ausente) não satisfaz" node_version_ge "" "22.5.0"
+
 echo
 if [ "$fail" -eq 0 ]; then
   echo "OK: $total asserções passaram"

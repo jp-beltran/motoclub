@@ -61,3 +61,15 @@ parse_glibc_version() {
   local line="$1"
   echo "$line" | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | tail -1
 }
+
+# node_version_ge CURRENT REQUIRED  (comparação pontuada completa, não só o
+# major). Ex.: node_version_ge "v22.11.0" "22.5.0" -> verdadeiro.
+# Existe porque "major >= 22" não basta para tudo: node:sqlite só existe a
+# partir do Node 22.5, e node_version_ok (acima) não enxerga isso.
+node_version_ge() {
+  local current="$1" required="$2"
+  if [ -z "$current" ]; then
+    return 1
+  fi
+  version_ge "$(strip_v "$current")" "$required"
+}

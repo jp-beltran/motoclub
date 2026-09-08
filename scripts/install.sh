@@ -59,6 +59,10 @@ BACKUP_SERVICE_UNIT="motoclub-backup.service"
 BACKUP_TIMER_UNIT="motoclub-backup.timer"
 
 NODE_MAJOR_REQUIRED=22
+# node:sqlite só existe a partir do Node 22.5 — major>=22 sozinho não
+# basta (um Node 22.0-22.4 passaria no major mas não teria o driver que
+# o servidor e estes scripts precisam).
+NODE_MIN_VERSION="22.5.0"
 MIN_GLIBC="2.28"
 # Usada só se não der para consultar nodejs.org (ex.: sem internet nesse
 # instante). Vale a pena revisar esta constante de vez em quando.
@@ -208,13 +212,13 @@ ensure_node() {
   step "Node.js"
   local current
   current="$(current_node_version)"
-  if node_version_ok "$current" "$NODE_MAJOR_REQUIRED"; then
-    ok "Node $current já está pronto em $NODE_LINK/bin/node (>= $NODE_MAJOR_REQUIRED) — nada a fazer"
+  if node_version_ge "$current" "$NODE_MIN_VERSION"; then
+    ok "Node $current já está pronto em $NODE_LINK/bin/node (>= $NODE_MIN_VERSION) — nada a fazer"
     return 0
   fi
 
   if [ -n "$current" ]; then
-    info "Node em $NODE_LINK é $current, mais antigo que o exigido (>= $NODE_MAJOR_REQUIRED) — vou instalar uma versão nova ao lado"
+    info "Node em $NODE_LINK é $current, mais antigo que o exigido (>= $NODE_MIN_VERSION; node:sqlite só existe a partir daí) — vou instalar uma versão nova ao lado"
   else
     info "Node não encontrado em $NODE_LINK/bin/node — vou instalar"
   fi
@@ -244,8 +248,12 @@ ensure_node() {
 
   local tmp_dir
   tmp_dir="$(mktemp -d)"
+  # EXIT, não RETURN: os dois "exit 1" abaixo (hash ausente, SHA256 não
+  # confere) terminam o script inteiro, e um trap RETURN só dispara em
+  # `return`/fim de função — nesses dois casos ele nunca dispararia,
+  # deixando o tarball baixado (até ~50 MB) esquecido em /tmp para sempre.
   # shellcheck disable=SC2064
-  trap "rm -rf '$tmp_dir'" RETURN
+  trap "rm -rf '$tmp_dir'" EXIT
 
   info "Baixando $tarball..."
   curl -fsSL -o "$tmp_dir/$tarball" "$url"
@@ -274,9 +282,26 @@ ensure_node() {
     sudo_prefix=(sudo)
   fi
 
+  # Defesa extra (o "ensure_node" só chega até aqui quando $current já
+  # falhou node_version_ge, então install_dir nunca deveria ser a versão
+  # hoje ativa — mas se por algum motivo for, recusar em vez de apagar a
+  # versão em uso é o comportamento seguro).
+  local active_target=""
+  if [ -L "$NODE_LINK" ]; then
+    active_target="$(readlink -f "$NODE_LINK" 2>/dev/null || true)"
+  fi
+  if [ -d "$install_dir" ] && [ -n "$active_target" ] && [ "$install_dir" = "$active_target" ]; then
+    fail "'$install_dir' é a instalação ATIVA do Node — recusando removê-la. Algo está inconsistente; investigue manualmente antes de rodar de novo."
+    exit 1
+  fi
+
   info "Extraindo em $install_dir..."
   "${sudo_prefix[@]}" mkdir -p "$NODE_INSTALL_ROOT"
   "${sudo_prefix[@]}" tar -xJf "$tmp_dir/$tarball" -C "$NODE_INSTALL_ROOT"
+  # rm-antes-do-mv só alcança um diretório de tentativa anterior incompleta
+  # com este MESMO nome de versão (nunca a versão ativa — checado acima);
+  # o link em si só é trocado no fim, depois que o mv já colocou os
+  # arquivos novos no lugar certo.
   "${sudo_prefix[@]}" rm -rf "$install_dir"
   "${sudo_prefix[@]}" mv "$NODE_INSTALL_ROOT/node-${target_version}-linux-x64" "$install_dir"
   "${sudo_prefix[@]}" ln -sfn "$install_dir" "$NODE_LINK"
@@ -340,7 +365,14 @@ prompt_usb_path() {
     return 0
   fi
 
-  ok "pendrive verificado e gravável em $path"
+  # ">&2" aqui não é opcional: esta função devolve o caminho escrevendo em
+  # stdout (é assim que os dois chamadores capturam com "$(...)"), e "ok"
+  # também escreve em stdout por padrão. Sem o redirecionamento, a saída
+  # combinada ("  OK  pendrive...\n/media/x") vira o valor capturado —
+  # BAR_BACKUP_USB_PATH grava essa string inteira, quebrada, no arquivo de
+  # segredos, e o pendrive nunca funciona de verdade (ver o teste que
+  # exercita exatamente isto, scripts/test/install-lib.test.sh).
+  ok "pendrive verificado e gravável em $path" >&2
   printf '%s' "$path"
 }
 
@@ -363,6 +395,13 @@ ensure_usb_config_update_only() {
     echo "BAR_BACKUP_USB_PATH=$usb_path" >> "$ENV_FILE"
     ok "pendrive registrado em $ENV_FILE"
   fi
+}
+
+# "mínimo 4 dígitos" tem que exigir dígitos de verdade — checar só o
+# comprimento aceitaria "abcd" como PIN válido, o que contradiz a própria
+# mensagem mostrada ao operador.
+is_valid_pin() {
+  [[ "$1" =~ ^[0-9]{4,}$ ]]
 }
 
 ensure_secrets() {
@@ -388,8 +427,8 @@ ensure_secrets() {
   if [ -n "${MOTOCLUB_INSTALL_PIN:-}" ]; then
     pin="$MOTOCLUB_INSTALL_PIN"
     pin_confirm="${MOTOCLUB_INSTALL_PIN_CONFIRM:-$MOTOCLUB_INSTALL_PIN}"
-    if [ "$pin" != "$pin_confirm" ] || [ "${#pin}" -lt 4 ]; then
-      fail "PIN de teste inválido (MOTOCLUB_INSTALL_PIN/_CONFIRM)"
+    if [ "$pin" != "$pin_confirm" ] || ! is_valid_pin "$pin"; then
+      fail "PIN de teste inválido (MOTOCLUB_INSTALL_PIN/_CONFIRM) — precisa ser só dígitos, mínimo 4"
       exit 1
     fi
   else
@@ -412,8 +451,8 @@ ensure_secrets() {
         fail "os PINs digitados são diferentes — tente de novo."
         continue
       fi
-      if [ "${#pin}" -lt 4 ]; then
-        fail "PIN muito curto (mínimo 4 dígitos) — tente de novo."
+      if ! is_valid_pin "$pin"; then
+        fail "PIN inválido — precisa ser só dígitos, mínimo 4 (tente de novo)."
         continue
       fi
       break
@@ -468,11 +507,29 @@ ensure_timezone() {
   fi
 
   ensure_sudo
-  sudo timedatectl set-timezone America/Sao_Paulo
-  ok "fuso horário ajustado para America/Sao_Paulo"
+  if sudo timedatectl set-timezone America/Sao_Paulo; then
+    ok "fuso horário ajustado para America/Sao_Paulo"
+  else
+    fail "não consegui ajustar o fuso — rode manualmente: sudo timedatectl set-timezone America/Sao_Paulo"
+  fi
 }
 
 # --- Fase 6: unidades systemd de usuário ------------------------------------------
+
+# Espera até ~15s que $DB_PATH apareça, depois de subir o serviço. O
+# processo entra "ativo" (Type=simple) assim que faz fork/exec — o banco só
+# existe quando o servidor de fato abre e cria o arquivo. Sem esta espera,
+# disparar o backup logo em seguida pega o banco ainda inexistente numa
+# instalação perfeitamente correta, e o instalador terminaria dizendo que a
+# cadeia de backup está quebrada quando na verdade só faltou um instante.
+wait_for_database() {
+  local waited=0
+  while [ ! -f "$DB_PATH" ] && [ "$waited" -lt 15 ]; do
+    sleep 1
+    waited=$((waited + 1))
+  done
+  [ -f "$DB_PATH" ]
+}
 
 ensure_systemd_units() {
   step "Serviço systemd (usuário)"
@@ -480,9 +537,14 @@ ensure_systemd_units() {
   if [ "$DRY_RUN" -eq 1 ]; then
     info "[dry-run] copiaria deploy/*.service e deploy/*.timer para $SYSTEMD_USER_DIR"
     info "[dry-run] rodaria: systemctl --user daemon-reload"
-    info "[dry-run] rodaria: systemctl --user enable --now $SERVICE_UNIT"
-    info "[dry-run] rodaria: systemctl --user enable --now $BACKUP_TIMER_UNIT"
-    info "[dry-run] rodaria: systemctl --user start $BACKUP_SERVICE_UNIT (gera já o primeiro backup, como prova)"
+    info "[dry-run] rodaria: systemctl --user enable $SERVICE_UNIT"
+    info "[dry-run] rodaria: systemctl --user restart $SERVICE_UNIT"
+    info "[dry-run]   (restart, não só 'enable --now': numa reinstalação a unidade já está ativa e"
+    info "[dry-run]    'enable --now' não reinicia nada — sem isso, um PIN ou server.mjs novos ficam"
+    info "[dry-run]    gravados no disco mas o processo em memória continua rodando os antigos)"
+    info "[dry-run] rodaria: systemctl --user enable $BACKUP_TIMER_UNIT"
+    info "[dry-run] rodaria: systemctl --user restart $BACKUP_TIMER_UNIT"
+    info "[dry-run] esperaria o banco existir (até ~15s) e então rodaria: systemctl --user start $BACKUP_SERVICE_UNIT (gera já o primeiro backup, como prova)"
     info "[dry-run] pediria sudo para: loginctl enable-linger \$USER (sem isso, o serviço só sobe depois de um login gráfico)"
     return 0
   fi
@@ -498,37 +560,66 @@ ensure_systemd_units() {
     return 0
   fi
 
-  systemctl --user daemon-reload
-  systemctl --user enable --now "$SERVICE_UNIT"
-  ok "$SERVICE_UNIT habilitado e iniciado"
+  # Nenhuma chamada systemctl/loginctl abaixo pode abortar o script (por
+  # isso todas são "if ... ; then ... else fail ...; fi", nunca uma chamada
+  # nua sob `set -e`): se o serviço não sobe, é exatamente isso que
+  # scripts/doctor.sh (rodado no fim deste instalador) existe para
+  # diagnosticar — abortar aqui pularia esse diagnóstico bem na hora em que
+  # ele mais importa, deixando quem instalou sem pista nenhuma.
+  if ! systemctl --user daemon-reload; then
+    fail "systemctl --user daemon-reload falhou"
+  fi
 
-  systemctl --user enable --now "$BACKUP_TIMER_UNIT"
-  ok "$BACKUP_TIMER_UNIT habilitado (dispara todo dia às 04:00, mesmo se a máquina estava desligada na hora)"
-
-  info "Gerando o primeiro backup agora, para provar que a cadeia inteira funciona..."
-  if systemctl --user start "$BACKUP_SERVICE_UNIT"; then
-    ok "primeiro backup gerado com sucesso"
+  # "enable" + "restart" (não "enable --now"): "--now" só INICIA se a
+  # unidade estiver parada, e não faz nada se ela já estiver ativa. Numa
+  # reinstalação a unidade já está ativa (é o caso mais comum: rodar de
+  # novo depois de um "git pull" ou para trocar o PIN), e sem reiniciar de
+  # verdade, o binário/PIN novos ficam gravados no disco mas o processo em
+  # memória continua com os antigos — o efeito só aparece no próximo
+  # reboot, de forma imprevisível (possivelmente no meio de um evento).
+  if ! systemctl --user enable "$SERVICE_UNIT"; then
+    fail "systemctl --user enable $SERVICE_UNIT falhou"
+  fi
+  if systemctl --user restart "$SERVICE_UNIT"; then
+    ok "$SERVICE_UNIT (re)iniciado com a configuração e o binário atuais"
   else
-    fail "o primeiro backup falhou — rode 'journalctl --user -u $BACKUP_SERVICE_UNIT' para ver o motivo."
+    fail "$SERVICE_UNIT não (re)iniciou — o diagnóstico no fim deste instalador mostra o motivo."
+  fi
+
+  if ! systemctl --user enable "$BACKUP_TIMER_UNIT"; then
+    fail "systemctl --user enable $BACKUP_TIMER_UNIT falhou"
+  fi
+  if systemctl --user restart "$BACKUP_TIMER_UNIT"; then
+    ok "$BACKUP_TIMER_UNIT habilitado (dispara todo dia às 04:00, mesmo se a máquina estava desligada na hora)"
+  else
+    fail "$BACKUP_TIMER_UNIT não habilitou/reiniciou."
+  fi
+
+  info "Esperando o banco de dados ser criado pelo servidor (até 15s) antes do primeiro backup..."
+  if wait_for_database; then
+    info "Gerando o primeiro backup agora, para provar que a cadeia inteira funciona..."
+    if systemctl --user start "$BACKUP_SERVICE_UNIT"; then
+      ok "primeiro backup gerado com sucesso"
+    else
+      fail "o primeiro backup falhou — rode 'journalctl --user -u $BACKUP_SERVICE_UNIT' para ver o motivo."
+    fi
+  else
+    warn "o banco ainda não existe em $DB_PATH depois de 15s — o servidor pode não ter subido ainda (o diagnóstico abaixo mostra o estado real)."
+    warn "pulei o primeiro backup por agora; o timer roda sozinho às 04:00, ou rode 'systemctl --user start $BACKUP_SERVICE_UNIT' depois que o serviço estiver de pé."
   fi
 
   ensure_sudo
-  sudo loginctl enable-linger "$USER"
-  ok "linger habilitado para $USER — o serviço agora sobe no boot mesmo sem ninguém logar na tela"
+  if sudo loginctl enable-linger "$USER"; then
+    ok "linger habilitado para $USER — o serviço agora sobe no boot mesmo sem ninguém logar na tela"
+  else
+    fail "não consegui habilitar o linger — rode manualmente: sudo loginctl enable-linger $USER"
+  fi
 }
 
 # --- Fase 7: energia (sono e tampa) -----------------------------------------------
 
-XFCE_POWER_PROPS=(
-  "/xfce4-power-manager/lid-action-on-ac:int:0"
-  "/xfce4-power-manager/lid-action-on-battery:int:0"
-  "/xfce4-power-manager/dpms-on-ac-sleep:int:0"
-  "/xfce4-power-manager/dpms-on-ac-off:int:0"
-  "/xfce4-power-manager/dpms-on-battery-sleep:int:0"
-  "/xfce4-power-manager/dpms-on-battery-off:int:0"
-  "/xfce4-power-manager/blank-on-ac:int:0"
-  "/xfce4-power-manager/blank-on-battery:int:0"
-)
+# shellcheck source=lib/xfce-power-props.sh
+source "$SCRIPT_DIR/lib/xfce-power-props.sh"
 
 ensure_xfce_power_settings() {
   if ! command -v xfconf-query >/dev/null 2>&1; then
@@ -538,16 +629,13 @@ ensure_xfce_power_settings() {
   fi
 
   for entry in "${XFCE_POWER_PROPS[@]}"; do
-    local prop="${entry%%:*}"
-    local rest="${entry#*:}"
-    local type="${rest%%:*}"
-    local value="${rest#*:}"
+    split_xfce_prop_entry "$entry"
     if [ "$DRY_RUN" -eq 1 ]; then
-      info "[dry-run] xfconf-query -c xfce4-power-manager -p $prop -n -t $type -s $value"
+      info "[dry-run] xfconf-query -c xfce4-power-manager -p $PROP -n -t $PROP_TYPE -s $PROP_VALUE"
       continue
     fi
-    if ! xfconf-query -c xfce4-power-manager -p "$prop" -n -t "$type" -s "$value" 2>/dev/null; then
-      warn "não consegui ajustar $prop via xfconf-query — confira manualmente no Gerenciador de Energia."
+    if ! xfconf-query -c xfce4-power-manager -p "$PROP" -n -t "$PROP_TYPE" -s "$PROP_VALUE" 2>/dev/null; then
+      warn "não consegui ajustar $PROP via xfconf-query — confira manualmente no Gerenciador de Energia."
     fi
   done
   [ "$DRY_RUN" -eq 1 ] || ok "ajustes de energia do XFCE aplicados (tela nunca apaga/suspende; tampa fechada não faz nada)"
@@ -619,9 +707,15 @@ main() {
     say "Instalação concluída: o diagnóstico confirma que está tudo certo."
   else
     say "Instalação rodou até o fim, mas o diagnóstico encontrou pendências (veja acima)."
-    say "Resolva o que estiver marcado como FALHOU e rode 'scripts/doctor.sh' de novo para confirmar."
+    say "Resolva o que estiver marcado como FALHOU e rode '$SCRIPT_DIR/doctor.sh' de novo para confirmar."
   fi
   exit "$doctor_status"
 }
 
-main "$@"
+# Só roda main quando o arquivo é EXECUTADO, não quando é `source`ado —
+# isso é o que deixa scripts/test/install-lib.test.sh testar funções
+# individuais (prompt_usb_path, is_valid_pin, ...) sem disparar a
+# instalação inteira.
+if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
+  main "$@"
+fi
