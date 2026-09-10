@@ -40,7 +40,7 @@ export function PagamentosView() {
 
   return (
     <div className="flex flex-col gap-6">
-      <header>
+      <header data-tutorial="pagamentos">
         <h1 className="text-2xl font-semibold text-content-primary">Pagamentos</h1>
         <p className="mt-1 text-sm text-content-muted">
           Registre pagamentos de comandas de visitante e de extratos mensais, e acompanhe

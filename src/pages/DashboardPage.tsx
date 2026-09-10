@@ -13,7 +13,7 @@ export function DashboardPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <header>
+      <header data-tutorial="painel">
         <h1 className="text-2xl font-semibold text-content-primary">Painel</h1>
         <p className="mt-1 text-content-muted">{formatMonth(month)}</p>
       </header>

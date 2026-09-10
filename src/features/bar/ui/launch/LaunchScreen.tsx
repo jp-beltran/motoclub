@@ -150,7 +150,7 @@ export function LaunchScreen() {
 
   return (
     <div className="flex flex-col gap-6">
-      <header className="flex flex-col gap-1">
+      <header data-tutorial="lancamentos" className="flex flex-col gap-1">
         <h1 className="text-2xl font-semibold text-content-primary">Lançamentos</h1>
         <ol className="flex flex-wrap gap-4 text-sm">
           <StepLabel index={1} label="Consumidor" isCurrent={!consumer} />

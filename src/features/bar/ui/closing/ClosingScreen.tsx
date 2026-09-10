@@ -55,7 +55,7 @@ export function ClosingScreen() {
 
   return (
     <div className="flex flex-col gap-6">
-      <header className="flex flex-col gap-3">
+      <header data-tutorial="fechamento" className="flex flex-col gap-3">
         <h1 className="text-2xl font-semibold text-content-primary">Fechamento</h1>
         {snapshot ? (
           <MonthPicker

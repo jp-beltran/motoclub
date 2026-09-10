@@ -23,7 +23,7 @@ export default tseslint.config(
         'warn',
         {
           allowConstantExport: true,
-          allowExportNames: ['useBarRepository'],
+          allowExportNames: ['useBarRepository', 'useTutorial'],
         },
       ],
     },
