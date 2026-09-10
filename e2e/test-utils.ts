@@ -1,5 +1,9 @@
 import type { Locator, Page } from '@playwright/test'
 
+import {
+  TUTORIAL_SEEN_KEY,
+  TUTORIAL_SEEN_VALUE,
+} from '../src/features/tutorial/tutorial-storage'
 import { formatMonth, formatMonthName, getCurrentMonth } from '../src/shared/date'
 
 /**
@@ -18,6 +22,30 @@ export const ACTIVE_EVENT_NAME = `Encontro de ${formatMonthName(getCurrentMonth(
  * contract itself.
  */
 export const E2E_PIN = '246810'
+
+export interface ResetDemoOptions {
+  /**
+   * Whether this browser context should already have seen the tutorial.
+   * Defaults to `true`: a fresh context has an empty `localStorage`, so the
+   * tutorial would otherwise open itself in every spec, and its balloon — a
+   * `fixed` element over the top of the page — would sit between those
+   * specs and the controls they click. Only tutorial.spec.ts passes
+   * `false`, to get the first-visit behaviour it exists to check.
+   */
+  readonly tutorialSeen?: boolean
+}
+
+/**
+ * The only browser API this file touches, declared by hand: everything
+ * reachable from `playwright.config.ts` is compiled by
+ * `tsconfig.node.json`, whose `lib` is `["ES2023"]` with no DOM, so
+ * `window` is not a name here. The init script below runs in the page
+ * rather than in Node, and reaches that page's storage through
+ * `globalThis` — which exists in both.
+ */
+interface PageStorage {
+  readonly localStorage: { setItem(key: string, value: string): void }
+}
 
 /**
  * Logs the browser context in (`POST /api/session`) and restores the
@@ -44,8 +72,32 @@ export const E2E_PIN = '246810'
  * this function once already guarantees, since nothing here re-runs on
  * navigation), and it must actually undo whatever the previous test left
  * behind on the shared database.
+ *
+ * `localStorage` is still per-context, though, which is exactly why the
+ * tutorial's "first visit" flag has to be dealt with here: see
+ * `ResetDemoOptions.tutorialSeen`.
  */
-export async function resetDemoDatabase(page: Page): Promise<void> {
+export async function resetDemoDatabase(
+  page: Page,
+  options: ResetDemoOptions = {},
+): Promise<void> {
+  if (options.tutorialSeen ?? true) {
+    // Registered before the first navigation, and idempotent, so the
+    // per-navigation re-run costs nothing. Guarded because a document on an
+    // opaque origin (about:blank) throws on the accessor itself — the same
+    // reality `hasSeenTutorial` is written around.
+    await page.addInitScript(
+      ([key, value]: readonly [string, string]) => {
+        try {
+          ;(globalThis as unknown as PageStorage).localStorage.setItem(key, value)
+        } catch {
+          // Nothing to remember on a page that has no usable storage.
+        }
+      },
+      [TUTORIAL_SEEN_KEY, TUTORIAL_SEEN_VALUE] as const,
+    )
+  }
+
   const sessionResponse = await page.request.post('/api/session', { data: { pin: E2E_PIN } })
   if (!sessionResponse.ok()) {
     throw new Error(`e2e login failed: HTTP ${sessionResponse.status()}`)

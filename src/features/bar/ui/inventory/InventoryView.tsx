@@ -77,7 +77,7 @@ export function InventoryView() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
+      <div data-tutorial="estoque">
         <h1 className="text-2xl font-semibold text-content-primary">Estoque</h1>
         <p className="mt-1 text-sm text-content-muted">
           Registre entradas e ajustes e acompanhe o histórico de movimentações.

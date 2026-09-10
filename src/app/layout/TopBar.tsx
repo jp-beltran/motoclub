@@ -1,9 +1,12 @@
+import { HelpCircle } from 'lucide-react'
+
 import { CURRENT_ACTOR_NAME } from '../../features/bar/application/actor'
 import { useResetDemo } from '../../features/bar/application/queries'
 import {
   BAR_ERROR_FALLBACKS,
   describeBarError,
 } from '../../features/bar/application/error-messages'
+import { useTutorial } from '../../features/tutorial/tutorial-context'
 import { Button } from '../../shared/ui/Button'
 
 const RESET_DEMO_CONFIRM_MESSAGE =
@@ -15,6 +18,7 @@ interface TopBarProps {
 
 export function TopBar({ activeEventName }: TopBarProps) {
   const resetDemo = useResetDemo()
+  const tutorial = useTutorial()
 
   /**
    * Restoring the demo is the app's only way back from broken persisted
@@ -43,6 +47,12 @@ export function TopBar({ activeEventName }: TopBarProps) {
         <p className="text-sm text-content-muted">
           Operador: <span className="font-medium text-content-primary">{CURRENT_ACTOR_NAME}</span>
         </p>
+        {/* Always available, and the closing step of the tour points at it
+            so the operator knows where to come back to. */}
+        <Button variant="ghost" data-tutorial="botao-tutorial" onClick={tutorial.open}>
+          <HelpCircle aria-hidden="true" className="h-4 w-4" />
+          Tutorial
+        </Button>
         <Button variant="ghost" onClick={handleResetDemo} disabled={resetDemo.isPending}>
           Restaurar demonstração
         </Button>
