@@ -62,6 +62,9 @@ const EVERY_CODE: Record<BarErrorCode, true> = {
   'stored-data-unsupported-version': true,
   'stored-data-invalid': true,
   'database-mutation-invalid': true,
+  'consumer-name-required': true,
+  'consumer-kind-invalid': true,
+  'member-name-already-exists': true,
 }
 
 const EVERY_CODE_LIST = Object.keys(EVERY_CODE) as BarErrorCode[]
@@ -121,6 +124,14 @@ describe('describeBarError', () => {
       'A quantidade precisa ser um número inteiro maior que zero.',
     ],
     ['visitor-name-required', 'Informe o nome do visitante.'],
+    // The consumer registry serves both kinds, so its own sentences must
+    // not name one: "consumidor", never "visitante" or "integrante".
+    ['consumer-name-required', 'Informe o nome do consumidor.'],
+    ['consumer-kind-invalid', 'Escolha o tipo do consumidor: integrante ou visitante.'],
+    [
+      'member-name-already-exists',
+      'Já existe um integrante com esse nome. Use um nome que diferencie os dois.',
+    ],
   ] satisfies readonly (readonly [BarErrorCode, string])[])(
     'translates %s for the launch and consumer surfaces',
     (code, expected) => {

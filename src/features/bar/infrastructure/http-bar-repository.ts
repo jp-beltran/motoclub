@@ -13,6 +13,9 @@ import type {
   ReassignConsumptionInput,
   RecordPaymentInput,
   SelectActiveEventInput,
+  CreateConsumerInput,
+  UpdateConsumerInput,
+  SetConsumerActiveInput,
 } from '../application/bar-repository'
 import type { CancellationResult, ConsumptionResult } from '../domain/consumption'
 import type {
@@ -234,5 +237,17 @@ export class HttpBarRepository implements BarRepository {
 
   async addStockMovement(input: AddStockMovementInput): Promise<StockMovement> {
     return this.call('addStockMovement', [input])
+  }
+
+  async createConsumer(input: CreateConsumerInput): Promise<Consumer> {
+    return this.call('createConsumer', [input])
+  }
+
+  async updateConsumer(input: UpdateConsumerInput): Promise<Consumer> {
+    return this.call('updateConsumer', [input])
+  }
+
+  async setConsumerActive(input: SetConsumerActiveInput): Promise<Consumer> {
+    return this.call('setConsumerActive', [input])
   }
 }
