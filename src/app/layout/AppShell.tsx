@@ -1,28 +1,19 @@
 import { Outlet } from 'react-router-dom'
 
 import { getActiveEvent } from '../../features/bar/application/active-event'
-import { useBarSnapshot, useResetDemo } from '../../features/bar/application/queries'
+import { useBarSnapshot } from '../../features/bar/application/queries'
 import { TutorialTour } from '../../features/tutorial/TutorialTour'
 import { Button } from '../../shared/ui/Button'
+import { DevResetDemoButton } from './DevResetDemoButton'
 import { Sidebar } from './Sidebar'
 import { TopBar } from './TopBar'
 
-const RESET_DEMO_CONFIRM_MESSAGE =
-  'Restaurar os dados de demonstração? Isso substitui os dados salvos neste navegador.'
-
 export function AppShell() {
   const snapshotQuery = useBarSnapshot()
-  const resetDemo = useResetDemo()
 
   const activeEventName = snapshotQuery.data
     ? getActiveEvent(snapshotQuery.data.events)?.name
     : undefined
-
-  function handleResetDemo() {
-    if (window.confirm(RESET_DEMO_CONFIRM_MESSAGE)) {
-      resetDemo.mutate()
-    }
-  }
 
   return (
     <div className="flex min-h-screen flex-col bg-surface-base text-content-primary md:flex-row">
@@ -32,11 +23,7 @@ export function AppShell() {
         <main className="flex-1 p-4 md:p-6">
           {snapshotQuery.isPending && <LoadingState />}
           {snapshotQuery.isError && (
-            <PersistenceErrorState
-              onRetry={() => snapshotQuery.refetch()}
-              onResetDemo={handleResetDemo}
-              isResetting={resetDemo.isPending}
-            />
+            <PersistenceErrorState onRetry={() => snapshotQuery.refetch()} />
           )}
           {snapshotQuery.isSuccess && <Outlet />}
         </main>
@@ -61,11 +48,9 @@ function LoadingState() {
 
 interface PersistenceErrorStateProps {
   readonly onRetry: () => void
-  readonly onResetDemo: () => void
-  readonly isResetting: boolean
 }
 
-function PersistenceErrorState({ onRetry, onResetDemo, isResetting }: PersistenceErrorStateProps) {
+function PersistenceErrorState({ onRetry }: PersistenceErrorStateProps) {
   return (
     <div
       role="alert"
@@ -83,9 +68,11 @@ function PersistenceErrorState({ onRetry, onResetDemo, isResetting }: Persistenc
         <Button variant="primary" onClick={onRetry}>
           Tentar novamente
         </Button>
-        <Button variant="danger" onClick={onResetDemo} disabled={isResetting}>
-          Restaurar demonstração
-        </Button>
+        {/* The restore is destructive and development-only, exactly as in the
+            top bar: in production a corrupt database is recovered by whoever
+            administers the machine, not by reinstalling the demonstration
+            over the month's real data. */}
+        {import.meta.env.DEV ? <DevResetDemoButton variant="danger" /> : null}
       </div>
     </div>
   )

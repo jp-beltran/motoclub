@@ -80,4 +80,29 @@ describe('AppShell', () => {
 
     confirmSpy.mockRestore()
   })
+
+  /**
+   * The error panel offered the same destructive restore as the top bar, so
+   * it is gated the same way. In production the operator is left with
+   * "Tentar novamente" — see the report: recovering a genuinely corrupt
+   * database on the club's notebook is an administration job, not a button
+   * that reinstalls the demonstration over the month's real data.
+   */
+  it('offers no demo restore in the production error panel, only a retry', async () => {
+    vi.stubEnv('DEV', false)
+    const repository = createFakeBarRepository({
+      getSnapshot: vi.fn(async () => {
+        throw new BarPersistenceError('stored-data-malformed', 'Stored bar data is malformed JSON')
+      }),
+    })
+
+    renderAppShell(repository)
+
+    const alert = await screen.findByRole('alert')
+    expect(within(alert).getByRole('button', { name: 'Tentar novamente' })).toBeInTheDocument()
+    expect(
+      within(alert).queryByRole('button', { name: 'Restaurar demonstração' }),
+    ).not.toBeInTheDocument()
+    vi.unstubAllEnvs()
+  })
 })
