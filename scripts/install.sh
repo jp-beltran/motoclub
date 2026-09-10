@@ -119,10 +119,9 @@ ensure_sudo() {
   fi
   if [ "$SUDO_EXPLAINED" -eq 0 ]; then
     say ""
-    say "Este instalador precisa de privilégios administrativos (sudo) para três coisas:"
+    say "Este instalador precisa de privilégios administrativos (sudo) para duas coisas:"
     say "  1) instalar o Node em $NODE_INSTALL_ROOT (fora da sua pasta pessoal)"
-    say "  2) ligar o serviço no boot sem precisar fazer login gráfico (loginctl enable-linger)"
-    say "  3) impedir que o sistema durma sozinho, num arquivo em /etc (logind.conf.d)"
+    say "  2) impedir que o sistema durma sozinho, num arquivo em /etc (logind.conf.d)"
     say "Vai ser pedido uma vez agora; o resto do instalador não pede sudo de novo."
     SUDO_EXPLAINED=1
   fi
@@ -588,7 +587,7 @@ ensure_systemd_units() {
     info "[dry-run] rodaria: systemctl --user enable $BACKUP_TIMER_UNIT"
     info "[dry-run] rodaria: systemctl --user restart $BACKUP_TIMER_UNIT"
     info "[dry-run] esperaria o banco existir (até ~15s) e então rodaria: systemctl --user start $BACKUP_SERVICE_UNIT (gera já o primeiro backup, como prova)"
-    info "[dry-run] pediria sudo para: loginctl enable-linger \$USER (sem isso, o serviço só sobe depois de um login gráfico)"
+    info "[dry-run] rodaria: loginctl enable-linger \$USER (tenta sem sudo primeiro; no Mint 22.3 o polkit permite) e confirmaria Linger=yes"
     return 0
   fi
 
@@ -652,10 +651,27 @@ ensure_systemd_units() {
   fi
 
   ensure_sudo
-  if sudo loginctl enable-linger "$USER"; then
+  # Tenta SEM sudo primeiro. Medido no alvo (Mint 22.3, systemd 255): o
+  # polkit permite ao próprio usuário habilitar linger para si mesmo, sem
+  # root — inclusive por SSH. O plano original tratava este como "o único
+  # sudo necessário", e na maioria dos casos ele não é necessário nenhum.
+  # Cada sudo que sai é uma senha a menos para alguém digitar no bar.
+  if loginctl enable-linger "$USER" 2>/dev/null; then
+    ok "linger habilitado para $USER (sem precisar de sudo) — o serviço agora sobe no boot mesmo sem ninguém logar na tela"
+  elif sudo loginctl enable-linger "$USER"; then
     ok "linger habilitado para $USER — o serviço agora sobe no boot mesmo sem ninguém logar na tela"
   else
     fail "não consegui habilitar o linger — rode manualmente: sudo loginctl enable-linger $USER"
+  fi
+
+  # Confirmar em vez de confiar no código de saída: é esta linha que
+  # decide se o bar volta sozinho depois de uma queda de energia.
+  local linger_real
+  linger_real="$(loginctl show-user "$USER" 2>/dev/null | sed -n 's/^Linger=//p')"
+  if [ "$linger_real" = "yes" ]; then
+    ok "confirmado: Linger=yes"
+  else
+    fail "o comando não reclamou, mas 'loginctl show-user $USER' diz Linger=${linger_real:-desconhecido} — o serviço NÃO vai subir sozinho depois de uma queda de energia. Rode: sudo loginctl enable-linger $USER"
   fi
 }
 
