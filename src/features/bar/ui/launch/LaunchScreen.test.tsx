@@ -483,4 +483,24 @@ describe('LaunchScreen recent launches panel', () => {
       name: 'Cancelar Cerveja lata de Ana Paula',
     })).not.toBeInTheDocument()
   })
+
+  /**
+   * First of the three consequences of the deactivation ruling: a
+   * deactivated consumer is gone from this screen, so no new consumption
+   * can be launched for them. Their debt is untouched — it is read on
+   * `/fechamento`, `/pagamentos` and `/consumidores`, which is what the
+   * other two consequences cover.
+   */
+  it('leaves a deactivated consumer out of the picker entirely', async () => {
+    const repository = createRepository()
+    await repository.setConsumerActive({ id: 'member-ana', active: false })
+    renderWithBar(<LancamentosPage />, { repository, route: '/lancamentos' })
+
+    expect(await screen.findByRole('button', { name: /^Bruno Santos/ })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Ana Paula/ })).not.toBeInTheDocument()
+
+    // Not even by searching for her by name.
+    await userEvent.setup().type(screen.getByLabelText('Buscar por nome'), 'Ana')
+    expect(screen.queryByRole('button', { name: /^Ana Paula/ })).not.toBeInTheDocument()
+  })
 })

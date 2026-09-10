@@ -175,6 +175,27 @@ describe('buildMonthPreview', () => {
     expect(preview[0].lines).toEqual([])
     expect(preview[0].totalCents).toBe(0)
   })
+
+  /**
+   * The user's ruling: a deactivated integrante who still owes money keeps
+   * owing it. Dropping them from the preview would let the operator close
+   * the month believing nobody else owed anything — and `consolidateMonth`
+   * (which is fed every member, active or not) would then produce a
+   * statement the screen had never shown. The preview has to be what the
+   * closing will do.
+   */
+  it('still charges a deactivated member who consumed before being deactivated', () => {
+    const database = baseDatabase()
+    database.consumers = database.consumers.map((consumer) =>
+      consumer.id === 'member-ana' ? { ...consumer, active: false } : consumer,
+    )
+    database.consumptions = [consumption({ id: 'c1', quantity: 3 })]
+
+    const preview = buildMonthPreview(database, MONTH)
+
+    expect(preview.map((row) => row.consumer.id)).toEqual(['member-ana'])
+    expect(preview[0].totalCents).toBe(2100)
+  })
 })
 
 describe('summarizeClosedStatement', () => {
@@ -354,6 +375,20 @@ describe('listClosingMonths', () => {
 
     expect(listClosingMonths(snapshot, MONTH).map(({ month }) => month)).toEqual([
       '2026-09', '2026-08',
+    ])
+  })
+
+  it('still offers the month a deactivated member consumed in, so it can be closed', () => {
+    const snapshot = emptyDatabase()
+    snapshot.consumers = [{ ...ANA, active: false }]
+    snapshot.tabs = [monthlyTabFor('2026-09')]
+    snapshot.consumptions = [
+      consumption({ id: 'c1', tabId: 'tab-ana-mensal', createdAt: SEPTEMBER_INSTANT }),
+    ]
+
+    expect(listClosingMonths(snapshot, '2026-10')).toEqual([
+      { month: '2026-10', isClosed: false },
+      { month: '2026-09', isClosed: false },
     ])
   })
 })

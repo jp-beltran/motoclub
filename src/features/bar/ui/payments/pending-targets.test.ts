@@ -112,6 +112,41 @@ describe('listPendingTargets', () => {
     expect(anaTarget?.label).toContain('Ana Paula')
   })
 
+  /**
+   * The user's ruling, on the collecting side: a deactivated integrante
+   * stays on `/pagamentos` while they owe, and leaves it only by paying.
+   * Nothing here filters by `active` — this test is what keeps it that
+   * way, since "hide the inactive ones" is a tempting one-line change.
+   */
+  it('keeps a deactivated member on the payments screen until the debt is settled', () => {
+    const database = baseDatabase()
+    database.consumers = database.consumers.map((consumer) =>
+      consumer.id === 'member-ana' ? { ...consumer, active: false } : consumer,
+    )
+    const statement: MemberStatement = {
+      id: 'statement-ana-2026-09', memberId: 'member-ana', month: '2026-09',
+      consumptions: [
+        consumption({ id: 'c-ana', tabId: 'tab-ana-mensal', consumerId: 'member-ana', quantity: 3 }),
+      ],
+      createdAt: '2026-10-01T00:00:00.000Z',
+    }
+    database.memberStatements = [statement]
+
+    const pending = listPendingTargets(database)
+      .find((target) => target.targetId === 'statement-ana-2026-09')
+    expect(pending?.payment.remainingCents).toBe(2100)
+    expect(pending?.label).toContain('Ana Paula')
+
+    // Paid in full — and only then does the deactivated member drop off.
+    database.payments = [{
+      id: 'p-ana', target: PAYMENT_TARGET.STATEMENT, targetId: 'statement-ana-2026-09',
+      amountCents: 2100, paidAt: '2026-10-01T10:00:00.000Z', actorId: 'admin-demo',
+    }]
+    expect(
+      listPendingTargets(database).some(({ targetId }) => targetId === 'statement-ana-2026-09'),
+    ).toBe(false)
+  })
+
   it('excludes a member statement that is already fully paid', () => {
     const database = baseDatabase()
     const statement: MemberStatement = {
