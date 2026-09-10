@@ -106,7 +106,14 @@ export function CatalogView() {
     // the form is what the item becomes, which is also how a wrong code gets
     // cleared (`updateItem` reads a blank text field as "clear it").
     if (editingId) {
-      updateItem.mutate({ id: editingId, ...parsed.values }, { onSuccess: () => resetForm() })
+      // Campo a campo, e não `...parsed.values`: `stockQuantity` não pode
+      // vazar para cá nem por acidente, porque `updateItem` não mexe em
+      // estoque — isso é movimento em /estoque, que deixa rastro.
+      const { name, code, category, unit, favorite, unitPriceCents, unitCostCents } = parsed.values
+      updateItem.mutate(
+        { id: editingId, name, code, category, unit, favorite, unitPriceCents, unitCostCents },
+        { onSuccess: () => resetForm() },
+      )
       return
     }
     createItem.mutate(parsed.values, { onSuccess: () => resetForm() })
@@ -202,6 +209,28 @@ export function CatalogView() {
               />
             </label>
           </div>
+
+          {/* Só no cadastro: depois de criado, estoque muda por movimento em
+              /estoque, que deixa rastro de quem mexeu e quando. Mostrar o
+              campo na edição convidaria a corrigir estoque por fora do
+              histórico. */}
+          {!editingId && (
+            <label className="flex flex-col gap-1 text-sm text-content-muted">
+              Estoque inicial (opcional)
+              <input
+                type="text"
+                inputMode="numeric"
+                value={form.stockInput}
+                onChange={(event) => updateField('stockInput', event.target.value)}
+                placeholder="24"
+                className={FIELD_CLASSES}
+              />
+              <span className="text-xs text-content-muted">
+                Deixe em branco se você não controla o estoque deste item. Zero significa
+                que você controla e o estoque acabou.
+              </span>
+            </label>
+          )}
 
           <label className="flex min-h-11 items-center gap-2 text-sm text-content-primary">
             <input

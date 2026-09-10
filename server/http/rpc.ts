@@ -353,6 +353,7 @@ export const BAR_ERROR_STATUS: Readonly<Record<BarErrorCode, number>> = {
   'item-name-required': 422,
   'item-price-invalid': 422,
   'item-cost-invalid': 422,
+  'item-stock-quantity-invalid': 422,
 }
 
 /** Resolves any thrown value to the `{ status, code }` pair the wire sends. */

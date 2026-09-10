@@ -119,6 +119,15 @@ export type BarErrorCode =
   | 'item-name-required'
   | 'item-price-invalid'
   | 'item-cost-invalid'
+  /**
+   * Contagem inicial de estoque no cadastro do item. Código próprio, e não
+   * `stock-movement-quantity-invalid`: aquele nomeia um MOVIMENTO, e a
+   * contagem de abertura não é um movimento — é o inventário do qual os
+   * movimentos passam a partir. E não `stock-entry-quantity-invalid`, que
+   * exige maior que zero, enquanto abrir com zero é legítimo ("controlo
+   * este item, e acabou o estoque").
+   */
+  | 'item-stock-quantity-invalid'
 
 /**
  * The subset of the taxonomy raised while reading or writing the stored bar

@@ -51,12 +51,63 @@ describe('itemToForm', () => {
       priceInput: '7,00',
       costInput: '3,50',
       favorite: true,
+      // Vazio mesmo com o item tendo 42 em estoque: editar item não mexe em
+      // estoque. A contagem existente continua valendo e só muda por
+      // movimento em /estoque, que registra quem mexeu e quando.
+      stockInput: '',
     })
+  })
+
+  it('não traz a contagem de estoque para o formulário de edição', () => {
+    expect(BEER.stockQuantity).toBe(42)
+    expect(itemToForm(BEER).stockInput).toBe('')
   })
 
   it('renders an absent optional field as an empty input, never as "undefined"', () => {
     expect(itemToForm({ ...BEER, code: undefined, category: undefined, unit: undefined }))
       .toMatchObject({ code: '', category: '', unit: '' })
+  })
+})
+
+describe('parseItemForm, contagem inicial de estoque', () => {
+  const BASE = { ...EMPTY_ITEM_FORM, name: 'Cerveja artesanal', priceInput: '15,00', costInput: '8,00' }
+
+  it('em branco significa "sem controle de estoque", não zero', () => {
+    const parsed = parseItemForm({ ...BASE, stockInput: '   ' })
+
+    expect(parsed.ok).toBe(true)
+    // Ausente, e não `stockQuantity: 0`: são coisas diferentes, e é o que
+    // `getTrackedItems` lê para decidir se o item aparece em /estoque.
+    expect(parsed.ok && 'stockQuantity' in parsed.values).toBe(false)
+  })
+
+  it('zero é um valor legítimo: controlo, e acabou', () => {
+    const parsed = parseItemForm({ ...BASE, stockInput: '0' })
+
+    expect(parsed.ok && parsed.values.stockQuantity).toBe(0)
+  })
+
+  it('lê unidades inteiras', () => {
+    const parsed = parseItemForm({ ...BASE, stockInput: ' 24 ' })
+
+    expect(parsed.ok && parsed.values.stockQuantity).toBe(24)
+  })
+
+  it('recusa o que não é número inteiro, nomeando o campo', () => {
+    for (const digitado of ['2,5', '2.5', 'vinte', '1 caixa']) {
+      const parsed = parseItemForm({ ...BASE, stockInput: digitado })
+      expect(parsed.ok).toBe(false)
+      expect(!parsed.ok && parsed.error).toContain('estoque')
+    }
+  })
+
+  it('deixa o negativo passar pela tela, porque quem recusa é o domínio', () => {
+    // A tela só responde "isto é um número inteiro?". Se o número é
+    // aceitável quem decide é o repositório, com item-stock-quantity-invalid
+    // — a mesma divisão de trabalho do preço e do custo.
+    const parsed = parseItemForm({ ...BASE, stockInput: '-3' })
+
+    expect(parsed.ok && parsed.values.stockQuantity).toBe(-3)
   })
 })
 

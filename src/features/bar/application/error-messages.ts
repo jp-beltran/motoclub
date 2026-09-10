@@ -98,14 +98,26 @@ export const BAR_ERROR_MESSAGES: Readonly<Record<BarErrorCode, string>> = {
     'Este mês já foi fechado. Não é possível fechá-lo novamente.',
   'timestamp-invalid': 'A data informada é inválida.',
 
+  // Estas três frases diziam "os dados salvos neste navegador" e mandavam
+  // "restaurar a demonstração". Erradas duas vezes desde que o banco saiu do
+  // navegador: o dado vive num arquivo SQLite da máquina, compartilhado por
+  // qualquer navegador, e o botão de restaurar demonstração não existe mais em
+  // produção — era instrução impossível de seguir justamente na hora em que o
+  // operador mais precisa de instrução possível. Agora apontam para o
+  // caminho que existe de verdade: o backup da noite anterior, pelo
+  // scripts/restore.sh, que confere integridade antes e preserva o banco atual.
   'stored-data-malformed':
-    'Os dados salvos neste navegador estão corrompidos. Restaure a demonstração para continuar.',
+    'O banco de dados do bar está corrompido e não pôde ser lido. ' +
+    'Chame quem cuida deste computador: existe backup automático diário, ' +
+    'e a restauração é feita pelo terminal com scripts/restore.sh.',
   'stored-data-unsupported-version':
-    'Os dados salvos neste navegador estão em um formato não suportado. ' +
-    'Restaure a demonstração para continuar.',
+    'O banco de dados do bar está num formato que esta versão do sistema não ' +
+    'entende. Isso normalmente acontece depois de uma atualização parcial: ' +
+    'chame quem cuida deste computador para conferir a versão instalada.',
   'stored-data-invalid':
-    'Os dados salvos neste navegador estão inconsistentes. ' +
-    'Restaure a demonstração para continuar.',
+    'O banco de dados do bar está inconsistente e não pôde ser lido. ' +
+    'Chame quem cuida deste computador: existe backup automático diário, ' +
+    'e a restauração é feita pelo terminal com scripts/restore.sh.',
   'database-mutation-invalid':
     'A operação deixaria os dados do bar inconsistentes e foi cancelada. ' +
     'Atualize a página e tente novamente.',
@@ -122,6 +134,9 @@ export const BAR_ERROR_MESSAGES: Readonly<Record<BarErrorCode, string>> = {
     'nunca negativo.',
   'item-cost-invalid':
     'O custo precisa ser um valor válido, sem centavos quebrados e nunca negativo.',
+  'item-stock-quantity-invalid':
+    'A quantidade em estoque precisa ser um número inteiro, zero ou mais. ' +
+    'Deixe em branco se este item não tem controle de estoque.',
 }
 
 /**

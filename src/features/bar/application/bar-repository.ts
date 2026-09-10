@@ -136,6 +136,14 @@ export interface CreateItemInput {
   readonly name: string
   readonly unitPriceCents: number
   readonly unitCostCents: number
+  /**
+   * Contagem inicial de estoque. Ausente = este item não tem controle de
+   * estoque (é o que `getTrackedItems` e `describeStockStatus` leem). É o
+   * único momento em que o estoque muda sem um movimento registrado, porque
+   * é o inventário de abertura; daí em diante tudo passa por
+   * `addStockMovement`, que deixa rastro.
+   */
+  readonly stockQuantity?: number
   readonly category?: string
   readonly unit?: string
   readonly code?: string

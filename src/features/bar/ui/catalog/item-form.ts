@@ -14,6 +14,13 @@ export interface ItemFormState {
   readonly priceInput: string
   readonly costInput: string
   readonly favorite: boolean
+  /**
+   * Contagem inicial de estoque, como digitada. Vazio = este item não tem
+   * controle de estoque, que é diferente de "zero". Só vale no CADASTRO: a
+   * partir da criação, estoque muda por movimento em `/estoque`, que deixa
+   * rastro — por isso `itemToForm` não devolve este campo preenchido.
+   */
+  readonly stockInput: string
 }
 
 export const EMPTY_ITEM_FORM: ItemFormState = {
@@ -24,6 +31,7 @@ export const EMPTY_ITEM_FORM: ItemFormState = {
   priceInput: '',
   costInput: '',
   favorite: false,
+  stockInput: '',
 }
 
 /**
@@ -52,6 +60,9 @@ export function itemToForm(item: Item): ItemFormState {
     priceInput: formatCentsForInput(item.unitPriceCents),
     costInput: formatCentsForInput(item.unitCostCents),
     favorite: item.favorite ?? false,
+    // Editar item nunca mexe em estoque: a contagem existente continua
+    // valendo e muda só por movimento registrado.
+    stockInput: '',
   }
 }
 
@@ -63,6 +74,8 @@ export interface ItemFormValues {
   readonly favorite: boolean
   readonly unitPriceCents: number
   readonly unitCostCents: number
+  /** Ausente quando o operador deixou a contagem em branco. */
+  readonly stockQuantity?: number
 }
 
 export type ParsedItemForm =
@@ -89,6 +102,18 @@ export function parseItemForm(form: ItemFormState): ParsedItemForm {
     return { ok: false, error: 'Informe o custo em reais, como 7,00.' }
   }
 
+  // Mesma divisão de trabalho do preço: aqui só respondemos "isto é um
+  // número inteiro?". Se é um número aceitável (não negativo) quem decide é
+  // o domínio, com `item-stock-quantity-invalid`.
+  const stockTyped = form.stockInput.trim()
+  let stockQuantity: number | undefined
+  if (stockTyped !== '') {
+    if (!/^-?\d+$/.test(stockTyped)) {
+      return { ok: false, error: 'Informe a quantidade em estoque em unidades inteiras, como 24.' }
+    }
+    stockQuantity = Number(stockTyped)
+  }
+
   return {
     ok: true,
     values: {
@@ -99,6 +124,7 @@ export function parseItemForm(form: ItemFormState): ParsedItemForm {
       favorite: form.favorite,
       unitPriceCents,
       unitCostCents,
+      ...(stockQuantity === undefined ? {} : { stockQuantity }),
     },
   }
 }

@@ -439,12 +439,13 @@ export class LocalBarRepository implements BarRepository {
    * clone → mutate → revalidate → save cycle refuse anything that would
    * leave the database inconsistent.
    *
-   * A new item is born `active: true` and with **no** `stockQuantity`, so it
-   * reads as "Estoque não controlado" everywhere instead of claiming a stock
-   * of zero it was never counted into. See the report's note: `/estoque`
-   * (`getTrackedItems`, `addStockMovement`'s `item-stock-not-tracked`) only
-   * knows items that already carry the field, so an item registered here
-   * cannot receive stock entries until the port grows a way to opt in.
+   * Sem `stockQuantity`, o item nasce sem controle de estoque e lê como
+   * "Estoque não controlado" em vez de alegar um zero que ninguém contou.
+   * COM `stockQuantity`, ele nasce controlado nessa contagem de abertura e
+   * já aparece em `/estoque` aceitando movimento — antes disso, um item
+   * cadastrado pela tela nunca conseguia ter estoque, porque
+   * `getTrackedItems` filtra por esse campo e `addStockMovement` recusava
+   * com `item-stock-not-tracked`.
    */
   async createItem(input: CreateItemInput): Promise<Item> {
     return this.update((database) => {
@@ -456,6 +457,12 @@ export class LocalBarRepository implements BarRepository {
         ...optionalText('unit', input.unit),
         active: true,
         favorite: input.favorite ?? false,
+        // `?? {}` e não `stockQuantity: undefined`: a diferença entre "o
+        // campo não existe" e "existe valendo undefined" é exatamente o que
+        // `getTrackedItems` lê para decidir se o item tem controle de estoque.
+        ...(input.stockQuantity === undefined
+          ? {}
+          : { stockQuantity: readItemStockQuantity(input.stockQuantity) }),
         unitCostCents: readItemCostCents(input.unitCostCents),
         unitPriceCents: readItemPriceCents(input.unitPriceCents),
       }
@@ -1099,6 +1106,21 @@ function readItemPriceCents(unitPriceCents: number): number {
     )
   }
   return unitPriceCents
+}
+
+/**
+ * Contagem inicial de estoque: inteiro seguro, zero ou mais. Zero é um valor
+ * válido e significativo — "controlo este item, e o estoque acabou" —, então
+ * não dá para tratar como ausente.
+ */
+function readItemStockQuantity(stockQuantity: number): number {
+  if (!Number.isSafeInteger(stockQuantity) || stockQuantity < 0) {
+    throw new BarError(
+      'item-stock-quantity-invalid',
+      'Item stock quantity must be a non-negative safe integer',
+    )
+  }
+  return stockQuantity
 }
 
 function readItemCostCents(unitCostCents: number): number {

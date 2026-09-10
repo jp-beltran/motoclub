@@ -68,6 +68,7 @@ const EVERY_CODE: Record<BarErrorCode, true> = {
   'item-name-required': true,
   'item-price-invalid': true,
   'item-cost-invalid': true,
+  'item-stock-quantity-invalid': true,
 }
 
 const EVERY_CODE_LIST = Object.keys(EVERY_CODE) as BarErrorCode[]

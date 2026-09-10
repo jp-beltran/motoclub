@@ -1205,3 +1205,90 @@ describe('LocalBarRepository item registration', () => {
     await expectRejectedBarErrorCode(call(repository), 'item-not-found')
   })
 })
+
+/**
+ * Estoque de item recém-cadastrado.
+ *
+ * O cadastro de itens nasceu sem `stockQuantity`, e `getTrackedItems` filtra
+ * justamente por esse campo — então a bebida que o operador cadastrava não
+ * aparecia em `/estoque` e `addStockMovement` a recusava com
+ * `item-stock-not-tracked`. Cadastrar uma cerveja e não poder controlar o
+ * estoque dela é meio caminho de uma funcionalidade.
+ *
+ * A contagem inicial é o único momento em que o estoque muda sem um
+ * movimento: é o inventário de abertura, e é por isso que ela vive aqui e
+ * não em `addStockMovement`. Toda mudança depois dela passa por movimento,
+ * que é o que deixa rastro.
+ */
+describe('LocalBarRepository item stock opt-in', () => {
+  it('não controla estoque quando a contagem inicial não é informada', async () => {
+    const { repository } = createRepository()
+
+    const item = await repository.createItem({
+      name: 'Cerveja artesanal',
+      unitPriceCents: 1500,
+      unitCostCents: 800,
+    })
+
+    expect(item.stockQuantity).toBeUndefined()
+  })
+
+  it('passa a controlar estoque com a contagem informada, inclusive zero', async () => {
+    const { repository } = createRepository()
+
+    const comEstoque = await repository.createItem({
+      name: 'Cerveja artesanal',
+      unitPriceCents: 1500,
+      unitCostCents: 800,
+      stockQuantity: 24,
+    })
+    expect(comEstoque.stockQuantity).toBe(24)
+
+    // Zero é diferente de "não controlado": é "controlo, e acabou".
+    const zerado = await repository.createItem({
+      name: 'Gelo',
+      unitPriceCents: 500,
+      unitCostCents: 200,
+      stockQuantity: 0,
+    })
+    expect(zerado.stockQuantity).toBe(0)
+  })
+
+  it('aceita movimento de estoque no item cadastrado com contagem inicial', async () => {
+    const { repository } = createRepository()
+
+    const item = await repository.createItem({
+      name: 'Cerveja artesanal',
+      unitPriceCents: 1500,
+      unitCostCents: 800,
+      stockQuantity: 10,
+    })
+
+    await repository.addStockMovement({
+      itemId: item.id,
+      kind: 'entry',
+      quantityDelta: 6,
+      actorId: 'admin-demo',
+    })
+
+    const atualizado = (await repository.listItems()).find(({ id }) => id === item.id)
+    expect(atualizado?.stockQuantity).toBe(16)
+  })
+
+  it('recusa contagem inicial negativa ou fracionada, no domínio', async () => {
+    const { repository } = createRepository()
+
+    await expectRejectedBarErrorCode(
+      repository.createItem({
+        name: 'Cerveja artesanal', unitPriceCents: 1500, unitCostCents: 800, stockQuantity: -1,
+      }),
+      'item-stock-quantity-invalid',
+    )
+    await expectRejectedBarErrorCode(
+      repository.createItem({
+        name: 'Cerveja artesanal', unitPriceCents: 1500, unitCostCents: 800, stockQuantity: 2.5,
+      }),
+      'item-stock-quantity-invalid',
+    )
+  })
+})
