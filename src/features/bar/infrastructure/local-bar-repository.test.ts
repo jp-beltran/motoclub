@@ -826,3 +826,469 @@ describe('LocalBarRepository workflows', () => {
     expect(updated.stockQuantity).toBe(item.stockQuantity! + quantityDelta)
   })
 })
+
+/**
+ * The consumer registry: `createConsumer` (member **or** visitor, kind
+ * given explicitly), `updateConsumer` (fix a typo in a name or a phone)
+ * and `setConsumerActive`. `createVisitor` is deliberately left alone — it
+ * is the launch screen's walk-in shortcut and the tests above still cover
+ * it — so all three are additive, and the only rule they must agree with
+ * it on is asserted below (visitor names may repeat).
+ */
+describe('LocalBarRepository consumer registry', () => {
+  it.each([CONSUMER_KIND.MEMBER, CONSUMER_KIND.VISITOR] as const)(
+    'creates an active %s with a trimmed name and phone',
+    async (kind) => {
+      const { repository } = createRepository()
+
+      const consumer = await repository.createConsumer({
+        name: '  Marcos Silva  ',
+        phone: '  (11) 90000-0000  ',
+        kind,
+      })
+
+      expect(consumer).toEqual({
+        id: 'new-1',
+        name: 'Marcos Silva',
+        kind,
+        phone: '(11) 90000-0000',
+        active: true,
+      })
+      expect(await repository.listConsumers()).toContainEqual(consumer)
+    },
+  )
+
+  it('stores no phone field at all when none is given', async () => {
+    const { repository } = createRepository()
+
+    const consumer = await repository.createConsumer({
+      name: 'Marcos Silva',
+      kind: CONSUMER_KIND.MEMBER,
+    })
+
+    expect(consumer).not.toHaveProperty('phone')
+  })
+
+  it.each([
+    ['empty', ''],
+    ['blank', '   '],
+  ])('refuses an %s name in the domain, not in the screen', async (_label, name) => {
+    const { repository } = createRepository()
+    const before = (await repository.listConsumers()).length
+
+    await expectRejectedBarErrorCode(
+      repository.createConsumer({ name, kind: CONSUMER_KIND.MEMBER }),
+      'consumer-name-required',
+    )
+    expect((await repository.listConsumers()).length).toBe(before)
+  })
+
+  it('refuses a kind that is neither integrante nor visitante', async () => {
+    const { repository } = createRepository()
+
+    await expectRejectedBarErrorCode(
+      repository.createConsumer({
+        name: 'Marcos Silva',
+        kind: 'chefe' as typeof CONSUMER_KIND.MEMBER,
+      }),
+      'consumer-kind-invalid',
+    )
+  })
+
+  it('refuses a second member with the same name, ignoring case and padding', async () => {
+    const { repository } = createRepository()
+
+    await expectRejectedBarErrorCode(
+      repository.createConsumer({ name: '  ana paula ', kind: CONSUMER_KIND.MEMBER }),
+      'member-name-already-exists',
+    )
+  })
+
+  /**
+   * The member roster is a register: two "Ana Paula" integrantes make the
+   * monthly charge ambiguous. Visitors are walk-ins whose names repeat on
+   * purpose — and `createVisitor`, the shortcut this has to agree with, has
+   * never checked — so uniqueness stops at the member roster.
+   */
+  it('lets a visitor share a name with a member and with another visitor', async () => {
+    const { repository } = createRepository()
+
+    const first = await repository.createConsumer({
+      name: 'Ana Paula',
+      kind: CONSUMER_KIND.VISITOR,
+    })
+    const second = await repository.createConsumer({
+      name: 'Ana Paula',
+      kind: CONSUMER_KIND.VISITOR,
+    })
+
+    expect(first.id).not.toBe(second.id)
+    expect(second.name).toBe('Ana Paula')
+  })
+
+  it('corrects a name, keeping kind, phone and the active flag', async () => {
+    const { repository } = createRepository()
+
+    const updated = await repository.updateConsumer({
+      id: 'visitor-rafael',
+      name: '  Rafael Oliveira Souza  ',
+    })
+
+    expect(updated).toEqual({
+      id: 'visitor-rafael',
+      name: 'Rafael Oliveira Souza',
+      kind: CONSUMER_KIND.VISITOR,
+      phone: '(11) 96666-3003',
+      active: true,
+    })
+  })
+
+  it('adds a phone to a consumer that had none', async () => {
+    const { repository } = createRepository()
+
+    const updated = await repository.updateConsumer({
+      id: 'member-celia',
+      phone: ' (11) 95555-4004 ',
+    })
+
+    expect(updated).toMatchObject({ name: 'Célia Martins', phone: '(11) 95555-4004' })
+  })
+
+  it('drops the phone when an empty one is sent, and leaves it alone when none is', async () => {
+    const { repository } = createRepository()
+
+    const cleared = await repository.updateConsumer({ id: 'member-ana', phone: '  ' })
+    expect(cleared).not.toHaveProperty('phone')
+
+    const untouched = await repository.updateConsumer({ id: 'member-bruno', name: 'Bruno Sant' })
+    expect(untouched).toMatchObject({ name: 'Bruno Sant', phone: '(11) 97777-2002' })
+  })
+
+  it('refuses renaming a member onto another member, but not onto its own name', async () => {
+    const { repository } = createRepository()
+
+    await expectRejectedBarErrorCode(
+      repository.updateConsumer({ id: 'member-ana', name: 'Bruno Santos' }),
+      'member-name-already-exists',
+    )
+    expect(await repository.updateConsumer({ id: 'member-ana', name: 'ana paula' }))
+      .toMatchObject({ name: 'ana paula' })
+  })
+
+  it('refuses a blank name on a correction', async () => {
+    const { repository } = createRepository()
+
+    await expectRejectedBarErrorCode(
+      repository.updateConsumer({ id: 'member-ana', name: '   ' }),
+      'consumer-name-required',
+    )
+    expect((await repository.listConsumers()).find(({ id }) => id === 'member-ana')?.name)
+      .toBe('Ana Paula')
+  })
+
+  it('deactivates and reactivates a consumer', async () => {
+    const { repository } = createRepository()
+
+    expect(await repository.setConsumerActive({ id: 'member-ana', active: false }))
+      .toMatchObject({ id: 'member-ana', name: 'Ana Paula', active: false })
+    expect(await repository.setConsumerActive({ id: 'member-ana', active: true }))
+      .toMatchObject({ id: 'member-ana', active: true })
+  })
+
+  it('reports an unknown id as consumer-not-found on every registry write', async () => {
+    const { repository } = createRepository()
+
+    await expectRejectedBarErrorCode(
+      repository.updateConsumer({ id: 'ghost', name: 'Fantasma' }),
+      'consumer-not-found',
+    )
+    await expectRejectedBarErrorCode(
+      repository.setConsumerActive({ id: 'ghost', active: false }),
+      'consumer-not-found',
+    )
+  })
+})
+
+/**
+ * Ruling (decided by the user; not reopened here): deactivating an
+ * integrante who still owes money is **allowed**, and the debt stays
+ * visible. Three consequences, in real cents:
+ *
+ *  1. no new consumption can be launched for them — enforced here, in the
+ *     repository, so the launch screen's filter is a convenience and not
+ *     the rule itself;
+ *  2. the monthly closing still charges them, to the cent;
+ *  3. nothing is erased — the consumption rows survive untouched, and only
+ *     a real payment settles the statement they produce.
+ */
+describe('deactivating a member who still owes money', () => {
+  const ANA_DEBT_CENTS = 3 * 700
+
+  it('blocks new consumption, keeps the debt, and still charges it in the closing', async () => {
+    const { repository } = createRepository()
+    const before = await repository.getSnapshot()
+    expect(
+      before.consumptions.filter(({ consumerId }) => consumerId === 'member-ana'),
+    ).toHaveLength(1)
+
+    await repository.setConsumerActive({ id: 'member-ana', active: false })
+
+    // 1. No new consumption, neither onto the monthly tab that is already
+    //    open nor through a freshly ensured one.
+    await expectRejectedBarErrorCode(
+      repository.createConsumption({
+        tabId: 'tab-ana-mensal', itemId: 'item-cerveja', quantity: 1,
+        chargeKind: CHARGE_KIND.CHARGED, actorId: 'admin',
+      }),
+      'consumer-not-active-member',
+    )
+    await expectRejectedBarErrorCode(
+      repository.ensureMonthlyTab({ memberId: 'member-ana', month: SEED_MONTH }),
+      'consumer-not-active-member',
+    )
+
+    // 3. Nothing was forgiven: every consumption row is exactly as it was.
+    const after = await repository.getSnapshot()
+    expect(after.consumptions).toEqual(before.consumptions)
+
+    // 2. The closing still produces her statement, for the same cents.
+    const consolidation = await repository.createMonthlyClosing({
+      month: SEED_MONTH, actorId: 'admin',
+    })
+    const statement = consolidation.statements.find(({ memberId }) => memberId === 'member-ana')
+    expect(statement).toBeDefined()
+    expect(
+      statement!.consumptions.reduce(
+        (total, { quantity, unitPriceCents }) => total + quantity * unitPriceCents,
+        0,
+      ),
+    ).toBe(ANA_DEBT_CENTS)
+  })
+})
+
+/**
+ * Registering the real catalogue: the club's own drinks, with the club's own
+ * price and cost. Every guard asserted here lives in the domain, not in a
+ * screen — the negative price below is refused by a repository call, with no
+ * form in sight.
+ */
+describe('LocalBarRepository item registration', () => {
+  it('creates an active item with integer cents, defaulting favorite to false', async () => {
+    const { repository } = createRepository()
+
+    const item = await repository.createItem({
+      name: 'Cerveja artesanal',
+      unitPriceCents: 1250,
+      unitCostCents: 700,
+      category: 'Bebidas',
+      unit: 'garrafa',
+      code: 'BEV-900',
+    })
+
+    expect(item).toEqual({
+      id: 'new-1',
+      name: 'Cerveja artesanal',
+      code: 'BEV-900',
+      category: 'Bebidas',
+      unit: 'garrafa',
+      active: true,
+      favorite: false,
+      unitPriceCents: 1250,
+      unitCostCents: 700,
+    })
+    expect(await repository.listItems()).toContainEqual(item)
+  })
+
+  it('trims text and omits an optional field left blank', async () => {
+    const { repository } = createRepository()
+
+    const item = await repository.createItem({
+      name: '  Água com gás  ',
+      unitPriceCents: 400,
+      unitCostCents: 150,
+      category: '   ',
+      code: '',
+      favorite: true,
+    })
+
+    expect(item.name).toBe('Água com gás')
+    expect(item.favorite).toBe(true)
+    expect('category' in item).toBe(false)
+    expect('code' in item).toBe(false)
+  })
+
+  it.each([
+    ['a blank name', { name: '   ' }, 'item-name-required'],
+    ['a negative price', { unitPriceCents: -1 }, 'item-price-invalid'],
+    ['a fractional price', { unitPriceCents: 12.5 }, 'item-price-invalid'],
+    ['a negative cost', { unitCostCents: -1 }, 'item-cost-invalid'],
+    ['a fractional cost', { unitCostCents: 7.5 }, 'item-cost-invalid'],
+  ] satisfies readonly (readonly [string, object, BarErrorCode])[])(
+    'refuses %s on create, without writing anything',
+    async (_name, overrides, code) => {
+      const { repository, storage } = createRepository()
+      await repository.getSnapshot()
+      const writesBefore = storage.writes
+
+      await expectRejectedBarErrorCode(
+        repository.createItem({
+          name: 'Item novo', unitPriceCents: 700, unitCostCents: 350, ...overrides,
+        }),
+        code,
+      )
+      expect(storage.writes).toBe(writesBefore)
+    },
+  )
+
+  it('updates only the fields it was given, price and cost included', async () => {
+    const { repository } = createRepository()
+
+    const updated = await repository.updateItem({
+      id: 'item-cerveja', unitPriceCents: 900, unitCostCents: 400,
+    })
+
+    expect(updated).toMatchObject({
+      id: 'item-cerveja',
+      name: 'Cerveja lata',
+      code: 'BEV-001',
+      unitPriceCents: 900,
+      unitCostCents: 400,
+      stockQuantity: 42,
+    })
+  })
+
+  it('clears an optional field when given a blank value', async () => {
+    const { repository } = createRepository()
+
+    const updated = await repository.updateItem({ id: 'item-cerveja', code: '  ' })
+
+    expect('code' in updated).toBe(false)
+    expect((await repository.listItems()).find(({ id }) => id === 'item-cerveja')).toEqual(updated)
+  })
+
+  it.each([
+    ['a negative price', { unitPriceCents: -500 }, 'item-price-invalid'],
+    ['a negative cost', { unitCostCents: -500 }, 'item-cost-invalid'],
+    ['a blank name', { name: '' }, 'item-name-required'],
+  ] satisfies readonly (readonly [string, object, BarErrorCode])[])(
+    'refuses %s on update, leaving the stored price alone',
+    async (_name, overrides, code) => {
+      const { repository } = createRepository()
+
+      await expectRejectedBarErrorCode(
+        repository.updateItem({ id: 'item-cerveja', ...overrides }),
+        code,
+      )
+      expect((await repository.listItems()).find(({ id }) => id === 'item-cerveja'))
+        .toMatchObject({ unitPriceCents: 700, unitCostCents: 350 })
+    },
+  )
+
+  it('deactivates and reactivates an item', async () => {
+    const { repository } = createRepository()
+
+    const deactivated = await repository.setItemActive({ id: 'item-cerveja', active: false })
+    expect(deactivated.active).toBe(false)
+
+    const reactivated = await repository.setItemActive({ id: 'item-cerveja', active: true })
+    expect(reactivated.active).toBe(true)
+  })
+
+  it.each([
+    ['updateItem', (repository: LocalBarRepository) =>
+      repository.updateItem({ id: 'item-fantasma', unitPriceCents: 100 })],
+    ['setItemActive', (repository: LocalBarRepository) =>
+      repository.setItemActive({ id: 'item-fantasma', active: false })],
+  ] as const)('reports item-not-found from %s for an unknown id', async (_name, call) => {
+    const { repository } = createRepository()
+
+    await expectRejectedBarErrorCode(call(repository), 'item-not-found')
+  })
+})
+
+/**
+ * Estoque de item recém-cadastrado.
+ *
+ * O cadastro de itens nasceu sem `stockQuantity`, e `getTrackedItems` filtra
+ * justamente por esse campo — então a bebida que o operador cadastrava não
+ * aparecia em `/estoque` e `addStockMovement` a recusava com
+ * `item-stock-not-tracked`. Cadastrar uma cerveja e não poder controlar o
+ * estoque dela é meio caminho de uma funcionalidade.
+ *
+ * A contagem inicial é o único momento em que o estoque muda sem um
+ * movimento: é o inventário de abertura, e é por isso que ela vive aqui e
+ * não em `addStockMovement`. Toda mudança depois dela passa por movimento,
+ * que é o que deixa rastro.
+ */
+describe('LocalBarRepository item stock opt-in', () => {
+  it('não controla estoque quando a contagem inicial não é informada', async () => {
+    const { repository } = createRepository()
+
+    const item = await repository.createItem({
+      name: 'Cerveja artesanal',
+      unitPriceCents: 1500,
+      unitCostCents: 800,
+    })
+
+    expect(item.stockQuantity).toBeUndefined()
+  })
+
+  it('passa a controlar estoque com a contagem informada, inclusive zero', async () => {
+    const { repository } = createRepository()
+
+    const comEstoque = await repository.createItem({
+      name: 'Cerveja artesanal',
+      unitPriceCents: 1500,
+      unitCostCents: 800,
+      stockQuantity: 24,
+    })
+    expect(comEstoque.stockQuantity).toBe(24)
+
+    // Zero é diferente de "não controlado": é "controlo, e acabou".
+    const zerado = await repository.createItem({
+      name: 'Gelo',
+      unitPriceCents: 500,
+      unitCostCents: 200,
+      stockQuantity: 0,
+    })
+    expect(zerado.stockQuantity).toBe(0)
+  })
+
+  it('aceita movimento de estoque no item cadastrado com contagem inicial', async () => {
+    const { repository } = createRepository()
+
+    const item = await repository.createItem({
+      name: 'Cerveja artesanal',
+      unitPriceCents: 1500,
+      unitCostCents: 800,
+      stockQuantity: 10,
+    })
+
+    await repository.addStockMovement({
+      itemId: item.id,
+      kind: 'entry',
+      quantityDelta: 6,
+      actorId: 'admin-demo',
+    })
+
+    const atualizado = (await repository.listItems()).find(({ id }) => id === item.id)
+    expect(atualizado?.stockQuantity).toBe(16)
+  })
+
+  it('recusa contagem inicial negativa ou fracionada, no domínio', async () => {
+    const { repository } = createRepository()
+
+    await expectRejectedBarErrorCode(
+      repository.createItem({
+        name: 'Cerveja artesanal', unitPriceCents: 1500, unitCostCents: 800, stockQuantity: -1,
+      }),
+      'item-stock-quantity-invalid',
+    )
+    await expectRejectedBarErrorCode(
+      repository.createItem({
+        name: 'Cerveja artesanal', unitPriceCents: 1500, unitCostCents: 800, stockQuantity: 2.5,
+      }),
+      'item-stock-quantity-invalid',
+    )
+  })
+})

@@ -1,10 +1,12 @@
-import { screen, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 
+import type { StorageLike } from '../../application/bar-repository'
 import { LOW_STOCK_THRESHOLD } from '../../application/constants'
 import type { Item } from '../../domain/entities'
 import { createDemoDatabase } from '../../infrastructure/demo-seed'
+import { LocalBarRepository } from '../../infrastructure/local-bar-repository'
 import { createFakeBarRepository } from '../../../../test/fake-bar-repository'
 import { renderWithBar } from '../../../../test/render-with-bar'
 import { CatalogView } from './CatalogView'
@@ -121,5 +123,175 @@ describe('CatalogView', () => {
 
     const row = await screen.findByRole('row', { name: /Espetinho/ })
     expect(within(row).getByText(`${LOW_STOCK_THRESHOLD} (estoque crítico)`)).toBeInTheDocument()
+  })
+})
+
+/**
+ * These run against a real `LocalBarRepository` over in-memory storage, the
+ * way `PagamentosView.test.tsx` does, so what the screen shows after a
+ * refusal is the domain's own refusal — not a message this test invented.
+ */
+class MemoryStorage implements StorageLike {
+  private readonly values = new Map<string, string>()
+
+  getItem(key: string): string | null {
+    return this.values.get(key) ?? null
+  }
+
+  setItem(key: string, value: string): void {
+    this.values.set(key, value)
+  }
+}
+
+function renderCatalogWithRealRepository() {
+  let id = 0
+  const repository = new LocalBarRepository({
+    storage: new MemoryStorage(),
+    storageKey: 'test-catalog',
+    nextId: () => `catalog-${++id}`,
+    now: () => new Date().toISOString(),
+  })
+  return { ...renderWithBar(<CatalogView />, { repository }), repository }
+}
+
+async function fillItemForm(
+  user: ReturnType<typeof userEvent.setup>,
+  values: { name?: string; price?: string; cost?: string; category?: string; code?: string },
+) {
+  if (values.name !== undefined) {
+    await user.clear(screen.getByLabelText('Nome'))
+    if (values.name) await user.type(screen.getByLabelText('Nome'), values.name)
+  }
+  if (values.code !== undefined) {
+    await user.clear(screen.getByLabelText('Código'))
+    if (values.code) await user.type(screen.getByLabelText('Código'), values.code)
+  }
+  if (values.category !== undefined) {
+    await user.clear(screen.getByLabelText('Categoria'))
+    if (values.category) await user.type(screen.getByLabelText('Categoria'), values.category)
+  }
+  if (values.price !== undefined) {
+    await user.clear(screen.getByLabelText('Preço de venda (R$)'))
+    if (values.price) await user.type(screen.getByLabelText('Preço de venda (R$)'), values.price)
+  }
+  if (values.cost !== undefined) {
+    await user.clear(screen.getByLabelText('Custo (R$)'))
+    if (values.cost) await user.type(screen.getByLabelText('Custo (R$)'), values.cost)
+  }
+}
+
+describe('CatalogView item registration', () => {
+  it('registers a new item with its price and cost in cents', async () => {
+    const user = userEvent.setup()
+    const { repository } = renderCatalogWithRealRepository()
+    await screen.findByRole('table', { name: 'Itens ativos' })
+
+    await fillItemForm(user, {
+      name: 'Cerveja artesanal', code: 'BEV-900', category: 'Bebidas',
+      price: '12,50', cost: '7,00',
+    })
+    await user.click(screen.getByRole('button', { name: 'Cadastrar item' }))
+
+    const row = await screen.findByRole('row', { name: /Cerveja artesanal/ })
+    expect(within(row).getByText('R$ 12,50')).toBeInTheDocument()
+    expect(within(row).getByText('R$ 7,00')).toBeInTheDocument()
+    expect((await repository.listItems()).find(({ name }) => name === 'Cerveja artesanal'))
+      .toMatchObject({ unitPriceCents: 1250, unitCostCents: 700, active: true })
+  })
+
+  it('clears the form after a successful registration, ready for the next item', async () => {
+    const user = userEvent.setup()
+    renderCatalogWithRealRepository()
+    await screen.findByRole('table', { name: 'Itens ativos' })
+
+    await fillItemForm(user, { name: 'Suco de laranja', price: '8', cost: '3' })
+    await user.click(screen.getByRole('button', { name: 'Cadastrar item' }))
+
+    await screen.findByRole('row', { name: /Suco de laranja/ })
+    expect(screen.getByLabelText('Nome')).toHaveValue('')
+    expect(screen.getByLabelText('Preço de venda (R$)')).toHaveValue('')
+  })
+
+  it('shows the domain refusal for a blank name, without inventing its own rule', async () => {
+    const user = userEvent.setup()
+    const { repository } = renderCatalogWithRealRepository()
+    await screen.findByRole('table', { name: 'Itens ativos' })
+    const itemsBefore = (await repository.listItems()).length
+
+    await fillItemForm(user, { name: '', price: '5', cost: '2' })
+    await user.click(screen.getByRole('button', { name: 'Cadastrar item' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Informe o nome do item.')
+    expect((await repository.listItems()).length).toBe(itemsBefore)
+  })
+
+  it('says which money field it could not read when the text is not an amount', async () => {
+    const user = userEvent.setup()
+    renderCatalogWithRealRepository()
+    await screen.findByRole('table', { name: 'Itens ativos' })
+
+    await fillItemForm(user, { name: 'Item torto', price: 'abc', cost: '2' })
+    await user.click(screen.getByRole('button', { name: 'Cadastrar item' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/preço de venda/i)
+  })
+
+  it('edits the price of an existing item, leaving its other fields alone', async () => {
+    const user = userEvent.setup()
+    const { repository } = renderCatalogWithRealRepository()
+    await screen.findByRole('row', { name: /Cerveja lata/ })
+
+    await user.click(screen.getByRole('button', { name: 'Editar Cerveja lata' }))
+    expect(screen.getByLabelText('Preço de venda (R$)')).toHaveValue('7,00')
+    expect(screen.getByLabelText('Custo (R$)')).toHaveValue('3,50')
+
+    await fillItemForm(user, { price: '9,00' })
+    await user.click(screen.getByRole('button', { name: 'Salvar item' }))
+
+    await waitFor(async () =>
+      expect((await repository.listItems()).find(({ id }) => id === 'item-cerveja'))
+        .toMatchObject({ name: 'Cerveja lata', code: 'BEV-001', unitPriceCents: 900,
+          unitCostCents: 350 }),
+    )
+    const row = await screen.findByRole('row', { name: /Cerveja lata/ })
+    expect(within(row).getByText('R$ 9,00')).toBeInTheDocument()
+  })
+
+  it('goes back to registering a new item after an edit is cancelled', async () => {
+    const user = userEvent.setup()
+    renderCatalogWithRealRepository()
+    await screen.findByRole('row', { name: /Cerveja lata/ })
+
+    await user.click(screen.getByRole('button', { name: 'Editar Cerveja lata' }))
+    expect(screen.getByLabelText('Nome')).toHaveValue('Cerveja lata')
+
+    await user.click(screen.getByRole('button', { name: 'Cancelar edição' }))
+
+    expect(screen.getByLabelText('Nome')).toHaveValue('')
+    expect(screen.getByRole('button', { name: 'Cadastrar item' })).toBeInTheDocument()
+  })
+
+  it('retires an item into the inactive table and brings it back', async () => {
+    const user = userEvent.setup()
+    renderCatalogWithRealRepository()
+    await screen.findByRole('row', { name: /Cerveja lata/ })
+
+    await user.click(screen.getByRole('button', { name: 'Desativar Cerveja lata' }))
+
+    const inactiveTable = await screen.findByRole('table', { name: 'Itens inativos' })
+    expect(within(inactiveTable).getByRole('row', { name: /Cerveja lata/ })).toBeInTheDocument()
+    expect(
+      within(screen.getByRole('table', { name: 'Itens ativos' }))
+        .queryByRole('row', { name: /Cerveja lata/ }),
+    ).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Reativar Cerveja lata' }))
+
+    await waitFor(() =>
+      expect(
+        within(screen.getByRole('table', { name: 'Itens ativos' }))
+          .getByRole('row', { name: /Cerveja lata/ }),
+      ).toBeInTheDocument(),
+    )
   })
 })

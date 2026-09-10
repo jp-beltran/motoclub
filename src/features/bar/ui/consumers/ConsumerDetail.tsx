@@ -1,8 +1,13 @@
+import { useState } from 'react'
+
+import { describeBarError } from '../../application/error-messages'
+import { useSetConsumerActive } from '../../application/queries'
 import { CONSUMER_KIND, CONSUMPTION_STATUS, type ConsumerKind } from '../../domain/constants'
 import type { Consumer } from '../../domain/entities'
 import { formatCents, formatDateTime, formatQuantity } from '../../../../shared/format'
 import { Button } from '../../../../shared/ui/Button'
 import { EmptyState } from '../../../../shared/ui/EmptyState'
+import { ConsumerEditForm } from './ConsumerEditForm'
 import type { ConsumerHistoryRow } from './consumer-history'
 
 const KIND_LABELS: Record<ConsumerKind, string> = {
@@ -23,12 +28,19 @@ export interface ConsumerDetailProps {
 }
 
 /**
- * Full consumption history of one consumer. Every consumption is listed,
- * including cancelled ones — visibly marked here — but the outstanding
- * total above the list comes straight from `getConsumerOutstandingCents`,
- * which already leaves cancelled and courtesy consumption out. See that
- * selector's own doc comment for exactly how it derives the total for each
- * consumer kind (they differ).
+ * Full consumption history of one consumer, and the two things the register
+ * can do to them: correct a typo and deactivate them.
+ *
+ * Every consumption is listed, including cancelled ones — visibly marked
+ * here — but the outstanding total above the list comes straight from
+ * `getConsumerOutstandingCents`, which already leaves cancelled and
+ * courtesy consumption out. See that selector's own doc comment for exactly
+ * how it derives the total for each consumer kind (they differ).
+ *
+ * The deactivation control sits right under that total on purpose: the
+ * user's ruling is that deactivating someone who owes money is allowed and
+ * the debt stays, so the operator has to be able to read the debt in the
+ * same glance as the button that stops new consumption for them.
  */
 export function ConsumerDetail({
   consumer,
@@ -36,6 +48,10 @@ export function ConsumerDetail({
   history,
   onClose,
 }: ConsumerDetailProps) {
+  const [isEditing, setIsEditing] = useState(false)
+  const setConsumerActive = useSetConsumerActive()
+  const isActive = consumer.active !== false
+
   return (
     <section
       aria-label={`Detalhes de ${consumer.name}`}
@@ -48,11 +64,31 @@ export function ConsumerDetail({
             {KIND_LABELS[consumer.kind]}
             {consumer.phone ? ` · ${consumer.phone}` : ''}
           </p>
+          {isActive ? null : (
+            <p className="mt-1 text-sm font-semibold text-warning">Inativo</p>
+          )}
         </div>
-        <Button variant="ghost" onClick={onClose}>
-          Fechar
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="ghost"
+            aria-expanded={isEditing}
+            onClick={() => setIsEditing((current) => !current)}
+          >
+            Corrigir dados
+          </Button>
+          <Button variant="ghost" onClick={onClose}>
+            Fechar
+          </Button>
+        </div>
       </div>
+
+      {isEditing ? (
+        <ConsumerEditForm
+          consumer={consumer}
+          onSaved={() => setIsEditing(false)}
+          onCancel={() => setIsEditing(false)}
+        />
+      ) : null}
 
       <div className="flex items-baseline justify-between gap-3 border-t border-border-subtle pt-3">
         <span className="text-sm font-semibold text-content-primary">Total em aberto</span>
@@ -65,6 +101,37 @@ export function ConsumerDetail({
           O saldo do integrante é cobrado no extrato mensal, após o fechamento.
         </p>
       ) : null}
+
+      <div className="flex flex-col gap-2 border-t border-border-subtle pt-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            variant={isActive ? 'danger' : 'primary'}
+            disabled={setConsumerActive.isPending}
+            onClick={() => {
+              setConsumerActive.reset()
+              setConsumerActive.mutate({ id: consumer.id, active: !isActive })
+            }}
+          >
+            {activationLabel(isActive, setConsumerActive.isPending)}
+          </Button>
+          <p className="text-xs text-content-muted">
+            {isActive
+              ? 'Um consumidor inativo não recebe novos lançamentos.'
+              : 'Reativar volta a permitir lançamentos para este consumidor.'}
+          </p>
+        </div>
+        {isActive && outstandingCents > 0 ? (
+          <p className="text-xs text-content-muted">
+            {`Os ${formatCents(outstandingCents)} em aberto continuam sendo cobrados no ` +
+              'fechamento do mês e na tela de pagamentos até serem quitados.'}
+          </p>
+        ) : null}
+        {setConsumerActive.isError ? (
+          <p role="alert" className="text-sm text-accent">
+            {describeBarError(setConsumerActive.error)}
+          </p>
+        ) : null}
+      </div>
 
       <div>
         <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-content-muted">
@@ -105,4 +172,10 @@ export function ConsumerDetail({
       </div>
     </section>
   )
+}
+
+/** One label per state, so a click never leaves the button reading "Desativar" while it is deactivating. */
+function activationLabel(isActive: boolean, isPending: boolean): string {
+  if (isPending) return isActive ? 'Desativando…' : 'Reativando…'
+  return isActive ? 'Desativar' : 'Reativar'
 }

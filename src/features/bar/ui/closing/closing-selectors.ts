@@ -55,9 +55,12 @@ export function listClosingMonths(
   snapshot: BarDatabase,
   currentMonth: string,
 ): readonly ClosingMonthOption[] {
+  // Deactivated members count here too: their debt does not expire when
+  // the club deactivates them, so the month it was consumed in must stay
+  // closable. See `buildMonthPreview` for the ruling this follows.
   const memberIds = new Set(
     snapshot.consumers
-      .filter((consumer) => consumer.kind === CONSUMER_KIND.MEMBER && consumer.active !== false)
+      .filter((consumer) => consumer.kind === CONSUMER_KIND.MEMBER)
       .map(({ id }) => id),
   )
   const closedMonths = new Set(snapshot.monthlyClosings.map(({ month }) => month))
@@ -73,9 +76,18 @@ export function listClosingMonths(
 
 /**
  * Pure preview of what closing `month` right now would produce: one row per
- * active member who has at least one consumption record that month (any
- * status or charge kind — the same inclusion test `consolidateMonth` uses),
- * with their charged lines and amount due. Writes nothing.
+ * member who has at least one consumption record that month (any status or
+ * charge kind — the same inclusion test `consolidateMonth` uses), with
+ * their charged lines and amount due. Writes nothing.
+ *
+ * Deactivated members included, deliberately (the user's ruling): a
+ * deactivated integrante takes no new consumption, but what they already
+ * consumed is still owed and the closing is what turns it into the
+ * statement `/pagamentos` collects. `LocalBarRepository.createMonthlyClosing`
+ * feeds `consolidateMonth` every member for the same reason, so filtering
+ * them out here would have shown the operator a preview the closing then
+ * contradicted — a statement appearing for someone the screen said owed
+ * nothing.
  */
 export function buildMonthPreview(
   snapshot: BarDatabase,
@@ -83,7 +95,7 @@ export function buildMonthPreview(
 ): readonly MemberMonthPreview[] {
   const itemNameById = new Map(snapshot.items.map(({ id, name }) => [id, name]))
   const members = snapshot.consumers.filter(
-    (consumer) => consumer.kind === CONSUMER_KIND.MEMBER && consumer.active !== false,
+    (consumer) => consumer.kind === CONSUMER_KIND.MEMBER,
   )
 
   return members.flatMap((consumer) => {

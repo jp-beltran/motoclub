@@ -1,4 +1,9 @@
-import type { ChargeKind, PaymentTarget, StockMovementKind } from '../domain/constants'
+import type {
+  ChargeKind,
+  ConsumerKind,
+  PaymentTarget,
+  StockMovementKind,
+} from '../domain/constants'
 import type {
   Consumption,
   Consumer,
@@ -84,6 +89,88 @@ export interface AddStockMovementInput {
   readonly quantityDelta: number
   readonly actorId: string
 }
+/**
+ * The consumer registry, added on top of `createVisitor` rather than in
+ * place of it: `createVisitor` is the launch screen's walk-in shortcut,
+ * already covered by tests and by the e2e money flow, and rewriting a path
+ * that handles money for the sake of symmetry is the wrong trade.
+ *
+ * `kind` is explicit here — that is the whole point, since until now the
+ * only consumer the system could register was a visitor.
+ */
+export interface CreateConsumerInput {
+  readonly name: string
+  readonly phone?: string
+  readonly kind: ConsumerKind
+}
+/**
+ * A correction, not a re-registration: `kind` is not editable (it decides
+ * which kind of tab, and therefore which kind of debt, the consumer already
+ * carries) and neither is `active` (see `SetConsumerActiveInput`). An
+ * omitted field is left as it is; `phone: ''` clears the stored phone,
+ * which is how a wrong number gets removed rather than replaced.
+ */
+export interface UpdateConsumerInput {
+  readonly id: string
+  readonly name?: string
+  readonly phone?: string
+}
+/**
+ * Deactivating a consumer who still owes money is allowed on purpose: the
+ * debt stays visible in the monthly closing and on `/pagamentos` until it
+ * is paid. What deactivation does stop is *new* consumption — see
+ * `assertActiveTabConsumer` in `infrastructure/local-bar-repository.ts`.
+ */
+export interface SetConsumerActiveInput {
+  readonly id: string
+  readonly active: boolean
+}
+
+/**
+ * Money arrives here already in integer cents: the parse from what the
+ * operator typed ("12,50") happens once, at the edge, in
+ * `shared/format.ts#parseCentsInput`. Nothing below this line ever sees a
+ * decimal string, and nothing anywhere multiplies or rounds a float.
+ */
+export interface CreateItemInput {
+  readonly name: string
+  readonly unitPriceCents: number
+  readonly unitCostCents: number
+  /**
+   * Contagem inicial de estoque. Ausente = este item não tem controle de
+   * estoque (é o que `getTrackedItems` e `describeStockStatus` leem). É o
+   * único momento em que o estoque muda sem um movimento registrado, porque
+   * é o inventário de abertura; daí em diante tudo passa por
+   * `addStockMovement`, que deixa rastro.
+   */
+  readonly stockQuantity?: number
+  readonly category?: string
+  readonly unit?: string
+  readonly code?: string
+  readonly favorite?: boolean
+}
+/**
+ * Every field but `id` is optional and means "change this one". A field left
+ * out keeps its stored value; a text field given as blank/whitespace clears
+ * it, which is the only way to unset a code or category typed by mistake.
+ *
+ * Changing `unitPriceCents`/`unitCostCents` is safe by construction and not
+ * by convention: a consumption copies both at the moment of sale (see
+ * `ConsumptionBase` in `domain/entities.ts`), so a new price prices the next
+ * sale and never rewrites one already recorded. That guarantee is locked
+ * down by `infrastructure/item-price-history.test.ts`.
+ */
+export interface UpdateItemInput {
+  readonly id: string
+  readonly name?: string
+  readonly unitPriceCents?: number
+  readonly unitCostCents?: number
+  readonly category?: string
+  readonly unit?: string
+  readonly code?: string
+  readonly favorite?: boolean
+}
+export interface SetItemActiveInput { readonly id: string; readonly active: boolean }
 
 export interface BarRepository {
   getSnapshot(): Promise<BarDatabase>
@@ -110,4 +197,10 @@ export interface BarRepository {
   recordPayment(input: RecordPaymentInput): Promise<Payment>
   createMonthlyClosing(input: CreateMonthlyClosingInput): Promise<MonthlyConsolidation>
   addStockMovement(input: AddStockMovementInput): Promise<StockMovement>
+  createConsumer(input: CreateConsumerInput): Promise<Consumer>
+  updateConsumer(input: UpdateConsumerInput): Promise<Consumer>
+  setConsumerActive(input: SetConsumerActiveInput): Promise<Consumer>
+  createItem(input: CreateItemInput): Promise<Item>
+  updateItem(input: UpdateItemInput): Promise<Item>
+  setItemActive(input: SetItemActiveInput): Promise<Item>
 }

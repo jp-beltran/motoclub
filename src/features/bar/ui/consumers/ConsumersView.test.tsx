@@ -1,4 +1,4 @@
-import { screen, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 
@@ -60,6 +60,19 @@ function consumption(overrides: Partial<Consumption> & { readonly id: string }):
 
 function buildDatabase(overrides: Partial<BarDatabase> = {}): BarDatabase {
   return { ...createDemoDatabase(), ...overrides }
+}
+
+/**
+ * The seed's roster narrowed to Ana alone, with every row that referenced
+ * the other consumers dropped: `LocalBarRepository` revalidates the whole
+ * database on read, and a tab pointing at a consumer who is not there is
+ * refused as `stored-data-invalid` — so a fixture cannot keep the seed's
+ * tabs while replacing its people.
+ */
+function anaOnlyDatabase(): BarDatabase {
+  return buildDatabase({
+    consumers: [ANA], tabs: [], consumptions: [], payments: [], stockMovements: [],
+  })
 }
 
 function renderConsumers(database: BarDatabase) {
@@ -153,20 +166,144 @@ describe('ConsumersView', () => {
     expect(screen.getByText('Nenhum consumidor encontrado')).toBeInTheDocument()
   })
 
-  it('adds a visitor created through the quick form to the list', async () => {
-    const database = buildDatabase({
-      consumers: [ANA], tabs: [], consumptions: [], payments: [], stockMovements: [],
-    })
-    const repository = createPersistentRepository(database)
+  /**
+   * The gap the user found by testing the app: "a opção é apenas de
+   * visitante". `/consumidores` is now the register — the kind is picked
+   * explicitly, and an integrante is the default because that is the one
+   * that could not be created at all.
+   *
+   * These run against the real `LocalBarRepository` over in-memory storage:
+   * a registration that only a stub confirmed would prove nothing about
+   * what is stored, and the refusals below have to be the domain's own.
+   */
+  it.each([
+    ['Integrante', 'Integrante'],
+    ['Visitante', 'Visitante'],
+  ])('registers a %s through the form and lists them as such', async (kindLabel, rowLabel) => {
     const user = userEvent.setup()
-    renderWithBar(<ConsumersView />, { repository })
+    renderWithBar(<ConsumersView />, {
+      repository: createPersistentRepository(anaOnlyDatabase()),
+    })
 
     await screen.findByRole('button', { name: /Ana Paula/ })
-    await user.click(screen.getByRole('button', { name: 'Novo visitante' }))
-    await user.type(screen.getByLabelText('Nome'), 'Carlos Lima')
-    await user.click(screen.getByRole('button', { name: 'Cadastrar visitante' }))
+    await user.click(screen.getByRole('button', { name: 'Cadastrar consumidor' }))
+    const form = screen.getByRole('form', { name: 'Cadastrar consumidor' })
+    await user.click(within(form).getByRole('radio', { name: kindLabel }))
+    await user.type(within(form).getByLabelText('Nome'), 'Marcos Silva')
+    await user.type(within(form).getByLabelText('Telefone (opcional)'), '(11) 90000-0000')
+    await user.click(within(form).getByRole('button', { name: 'Cadastrar' }))
 
-    expect(await screen.findByRole('button', { name: /Carlos Lima/ })).toBeInTheDocument()
+    const row = await screen.findByRole('button', { name: /Marcos Silva/ })
+    expect(within(row).getByText(new RegExp(rowLabel))).toBeInTheDocument()
+    expect(within(row).getByText(/\(11\) 90000-0000/)).toBeInTheDocument()
+  })
+
+  it('defaults the new consumer to integrante', async () => {
+    const user = userEvent.setup()
+    renderWithBar(<ConsumersView />, {
+      repository: createPersistentRepository(anaOnlyDatabase()),
+    })
+
+    await user.click(await screen.findByRole('button', { name: 'Cadastrar consumidor' }))
+
+    expect(screen.getByRole('radio', { name: 'Integrante' })).toBeChecked()
+  })
+
+  it('shows the domain refusal for an empty name instead of a message of its own', async () => {
+    const user = userEvent.setup()
+    renderWithBar(<ConsumersView />, {
+      repository: createPersistentRepository(anaOnlyDatabase()),
+    })
+
+    await user.click(await screen.findByRole('button', { name: 'Cadastrar consumidor' }))
+    const form = screen.getByRole('form', { name: 'Cadastrar consumidor' })
+    await user.type(within(form).getByLabelText('Nome'), '   ')
+    await user.click(within(form).getByRole('button', { name: 'Cadastrar' }))
+
+    expect(await within(form).findByRole('alert'))
+      .toHaveTextContent('Informe o nome do consumidor.')
+  })
+
+  it('reports a duplicate integrante name in pt-BR and keeps the form open', async () => {
+    const user = userEvent.setup()
+    renderWithBar(<ConsumersView />, {
+      repository: createPersistentRepository(anaOnlyDatabase()),
+    })
+
+    await user.click(await screen.findByRole('button', { name: 'Cadastrar consumidor' }))
+    const form = screen.getByRole('form', { name: 'Cadastrar consumidor' })
+    await user.type(within(form).getByLabelText('Nome'), 'ana paula')
+    await user.click(within(form).getByRole('button', { name: 'Cadastrar' }))
+
+    expect(await within(form).findByRole('alert')).toHaveTextContent(
+      'Já existe um integrante com esse nome. Use um nome que diferencie os dois.',
+    )
+    expect(within(form).getByLabelText('Nome')).toHaveValue('ana paula')
+  })
+
+  it('corrects a mistyped name and phone from the consumer detail', async () => {
+    const user = userEvent.setup()
+    renderWithBar(<ConsumersView />, {
+      repository: createPersistentRepository(anaOnlyDatabase()),
+    })
+
+    await user.click(await screen.findByRole('button', { name: /Ana Paula/ }))
+    const detail = await screen.findByRole('region', { name: /Ana Paula/ })
+    await user.click(within(detail).getByRole('button', { name: 'Corrigir dados' }))
+
+    const form = screen.getByRole('form', { name: /Corrigir dados de Ana Paula/ })
+    await user.clear(within(form).getByLabelText('Nome'))
+    await user.type(within(form).getByLabelText('Nome'), 'Ana Paula Souza')
+    await user.clear(within(form).getByLabelText('Telefone (opcional)'))
+    await user.click(within(form).getByRole('button', { name: 'Salvar' }))
+
+    const row = await screen.findByRole('button', { name: /Ana Paula Souza/ })
+    // The phone was cleared, not replaced by an empty-looking value.
+    expect(within(row).queryByText(/98888-1001/)).not.toBeInTheDocument()
+  })
+
+  /**
+   * The user's ruling in the register itself: deactivating an integrante
+   * who still owes money is allowed, and the debt stays on screen. What
+   * disappears is the ability to launch new consumption for them, which
+   * `/lancamentos` covers.
+   */
+  it('deactivates a consumer who still owes money, keeping the debt on screen', async () => {
+    const user = userEvent.setup()
+    renderWithBar(<ConsumersView />, {
+      repository: createPersistentRepository(
+        buildDatabase({
+          consumers: [ANA],
+          tabs: [ANA_TAB],
+          consumptions: [consumption({ id: 'c1', quantity: 3 })],
+          payments: [],
+          stockMovements: [],
+        }),
+      ),
+    })
+
+    await user.click(await screen.findByRole('button', { name: /Ana Paula/ }))
+    const detail = await screen.findByRole('region', { name: /Ana Paula/ })
+    expect(within(detail).getByText('Total em aberto').parentElement)
+      .toHaveTextContent('R$ 21,00')
+
+    await user.click(within(detail).getByRole('button', { name: 'Desativar' }))
+
+    const inactiveRow = await screen.findByRole('button', { name: /Ana Paula/ })
+    expect(within(inactiveRow).getByText('Inativo')).toBeInTheDocument()
+    // R$ 21,00 still owed, in the list row and in the detail panel.
+    expect(within(inactiveRow).getByText('R$ 21,00')).toBeInTheDocument()
+    const inactiveDetail = screen.getByRole('region', { name: /Ana Paula/ })
+    expect(within(inactiveDetail).getByText('Total em aberto').parentElement)
+      .toHaveTextContent('R$ 21,00')
+
+    await user.click(
+      within(screen.getByRole('region', { name: /Ana Paula/ }))
+        .getByRole('button', { name: 'Reativar' }),
+    )
+    await waitFor(() => {
+      expect(screen.queryByText('Inativo')).not.toBeInTheDocument()
+    })
   })
 
   it("shows the selected consumer's history, marking a cancelled item and leaving it out of the total", async () => {

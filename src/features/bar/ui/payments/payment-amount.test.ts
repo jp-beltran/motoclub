@@ -1,41 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
-import { parsePaymentAmount, parsePaymentAmountToCents } from './payment-amount'
+import { parsePaymentAmount } from './payment-amount'
 
-describe('parsePaymentAmountToCents', () => {
-  it('parses a comma-decimal value into cents', () => {
-    expect(parsePaymentAmountToCents('12,50')).toBe(1250)
-  })
-
-  it('parses a dot-decimal value into cents', () => {
-    expect(parsePaymentAmountToCents('12.50')).toBe(1250)
-  })
-
-  it('parses an integer value into cents', () => {
-    expect(parsePaymentAmountToCents('30')).toBe(3000)
-  })
-
-  it('pads a single decimal digit', () => {
-    expect(parsePaymentAmountToCents('12,5')).toBe(1250)
-  })
-
-  it('returns undefined for an empty value', () => {
-    expect(parsePaymentAmountToCents('   ')).toBeUndefined()
-  })
-
-  it('returns undefined for a non-numeric value', () => {
-    expect(parsePaymentAmountToCents('abc')).toBeUndefined()
-  })
-
-  it('returns undefined for more than two decimal digits', () => {
-    expect(parsePaymentAmountToCents('12,555')).toBeUndefined()
-  })
-
-  it('returns undefined for a negative value', () => {
-    expect(parsePaymentAmountToCents('-5')).toBeUndefined()
-  })
-})
-
+// The parse itself is `shared/format.ts#parseCentsInput`, tested in
+// `src/shared/format.test.ts` — one implementation for every money field the
+// operator types, here and in /itens. What stays this module's own job, and
+// is what the cases below cover, is the payment rule on top of it: positive,
+// and never above what is still owed.
 describe('parsePaymentAmount', () => {
   it('accepts a positive amount within the remaining balance', () => {
     expect(parsePaymentAmount('5,00', 1000)).toEqual({ ok: true, amountCents: 500 })

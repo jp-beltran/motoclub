@@ -11,8 +11,8 @@ import {
 } from './rpc'
 
 describe('RPC_METHOD_NAMES', () => {
-  it('lists exactly the 24 methods of the BarRepository port', () => {
-    expect(RPC_METHOD_NAMES).toHaveLength(24)
+  it('lists exactly the 27 methods of the BarRepository port', () => {
+    expect(RPC_METHOD_NAMES).toHaveLength(30)
   })
 
   it('has no duplicate names', () => {
@@ -226,6 +226,12 @@ describe('BAR_ERROR_STATUS', () => {
 
   it('classifies the uniqueness family as 409', () => {
     expect(BAR_ERROR_STATUS['monthly-closing-already-exists']).toBe(409)
+    expect(BAR_ERROR_STATUS['member-name-already-exists']).toBe(409)
+  })
+
+  it('classifies the consumer registry input guards as 422', () => {
+    expect(BAR_ERROR_STATUS['consumer-name-required']).toBe(422)
+    expect(BAR_ERROR_STATUS['consumer-kind-invalid']).toBe(422)
   })
 
   it('classifies ordinary domain refusals as 422', () => {

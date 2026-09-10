@@ -46,6 +46,18 @@ describe('TopBar', () => {
     expect(screen.getByText('Nenhum evento ativo')).toBeInTheDocument()
   })
 
+  /**
+   * Reading "Nenhum evento ativo" on every screen was a dead end while
+   * nothing could open an event. The name is now the way to /comandas,
+   * where the event is opened.
+   */
+  it('links the active event to the screen that manages it', () => {
+    renderTopBar(undefined)
+
+    expect(screen.getByRole('link', { name: /Evento ativo/ }))
+      .toHaveAttribute('href', '/comandas')
+  })
+
   it('shows the current operator name', () => {
     renderTopBar()
 
@@ -73,5 +85,36 @@ describe('TopBar', () => {
 
     await waitFor(() => expect(repository.resetDemo).toHaveBeenCalledTimes(1))
     confirmSpy.mockRestore()
+  })
+})
+
+/**
+ * On the club's notebook, restoring the demo is one click away from wiping
+ * the month: it replaces the whole SQLite database that every browser on
+ * that machine shares. It is a development affordance, so it exists only in
+ * development. The tutorial button, next to it, is not — that one is for the
+ * operator and stays.
+ *
+ * This asserts the gate at runtime. That the label is not even *shipped* is
+ * a separate claim, proved by grepping `dist/assets/*.js` after a build —
+ * a runtime test cannot see the bundle.
+ */
+describe('TopBar demo reset gate', () => {
+  it('offers the restore in development', () => {
+    renderTopBar()
+
+    expect(screen.getByRole('button', { name: 'Restaurar demonstração' }))
+      .toBeInTheDocument()
+  })
+
+  it('does not offer the restore in production', () => {
+    vi.stubEnv('DEV', false)
+    renderTopBar()
+
+    expect(screen.queryByRole('button', { name: 'Restaurar demonstração' }))
+      .not.toBeInTheDocument()
+    // The operator's own controls are untouched.
+    expect(screen.getByRole('button', { name: 'Tutorial' })).toBeInTheDocument()
+    vi.unstubAllEnvs()
   })
 })

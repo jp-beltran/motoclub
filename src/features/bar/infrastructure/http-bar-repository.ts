@@ -4,6 +4,7 @@ import type {
   BarRepository,
   CancelConsumptionRepositoryInput,
   CreateConsumptionInput,
+  CreateItemInput,
   CreateMonthlyClosingInput,
   CreateVisitorInput,
   EditConsumptionQuantityInput,
@@ -13,6 +14,11 @@ import type {
   ReassignConsumptionInput,
   RecordPaymentInput,
   SelectActiveEventInput,
+  CreateConsumerInput,
+  UpdateConsumerInput,
+  SetConsumerActiveInput,
+  SetItemActiveInput,
+  UpdateItemInput,
 } from '../application/bar-repository'
 import type { CancellationResult, ConsumptionResult } from '../domain/consumption'
 import type {
@@ -234,5 +240,29 @@ export class HttpBarRepository implements BarRepository {
 
   async addStockMovement(input: AddStockMovementInput): Promise<StockMovement> {
     return this.call('addStockMovement', [input])
+  }
+
+  async createConsumer(input: CreateConsumerInput): Promise<Consumer> {
+    return this.call('createConsumer', [input])
+  }
+
+  async updateConsumer(input: UpdateConsumerInput): Promise<Consumer> {
+    return this.call('updateConsumer', [input])
+  }
+
+  async setConsumerActive(input: SetConsumerActiveInput): Promise<Consumer> {
+    return this.call('setConsumerActive', [input])
+  }
+
+  async createItem(input: CreateItemInput): Promise<Item> {
+    return this.call('createItem', [input])
+  }
+
+  async updateItem(input: UpdateItemInput): Promise<Item> {
+    return this.call('updateItem', [input])
+  }
+
+  async setItemActive(input: SetItemActiveInput): Promise<Item> {
+    return this.call('setItemActive', [input])
   }
 }

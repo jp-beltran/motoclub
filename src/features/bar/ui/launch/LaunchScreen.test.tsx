@@ -483,4 +483,88 @@ describe('LaunchScreen recent launches panel', () => {
       name: 'Cancelar Cerveja lata de Ana Paula',
     })).not.toBeInTheDocument()
   })
+
+  /**
+   * First of the three consequences of the deactivation ruling: a
+   * deactivated consumer is gone from this screen, so no new consumption
+   * can be launched for them. Their debt is untouched — it is read on
+   * `/fechamento`, `/pagamentos` and `/consumidores`, which is what the
+   * other two consequences cover.
+   */
+  it('leaves a deactivated consumer out of the picker entirely', async () => {
+    const repository = createRepository()
+    await repository.setConsumerActive({ id: 'member-ana', active: false })
+    renderWithBar(<LancamentosPage />, { repository, route: '/lancamentos' })
+
+    expect(await screen.findByRole('button', { name: /^Bruno Santos/ })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Ana Paula/ })).not.toBeInTheDocument()
+
+    // Not even by searching for her by name.
+    await userEvent.setup().type(screen.getByLabelText('Buscar por nome'), 'Ana')
+    expect(screen.queryByRole('button', { name: /^Ana Paula/ })).not.toBeInTheDocument()
+  })
+})
+
+/**
+ * An item taken out of the catalogue must disappear from the one screen that
+ * would sell it again, and from nowhere else: the launch it already produced
+ * is money somebody owes, and it stays on the tab, in the day's history and
+ * in the month's totals. Retiring a product is not a way to undo a sale.
+ */
+describe('LaunchScreen with a retired item', () => {
+  it('stops offering an item that was deactivated, keeping the ones still on sale', async () => {
+    const repository = createRepository(demoWithoutConsumption())
+    const user = userEvent.setup()
+    const { queryClient } = renderWithBar(<LancamentosPage />, {
+      repository, route: '/lancamentos',
+    })
+
+    await user.click(await screen.findByRole('button', { name: /^Ana Paula/ }))
+    expect(await screen.findByRole('button', { name: 'Lançar Cerveja lata' }))
+      .toBeInTheDocument()
+
+    await repository.setItemActive({ id: 'item-cerveja', active: false })
+    // What /itens does after its own mutation: invalidate the one snapshot
+    // query every screen reads. There is no second read path to refresh.
+    await queryClient.invalidateQueries()
+
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: 'Lançar Cerveja lata' }))
+        .not.toBeInTheDocument()
+    })
+    expect(screen.getByRole('button', { name: 'Lançar Espetinho' })).toBeInTheDocument()
+  })
+
+  it('keeps a launch already made when its item is retired afterwards', async () => {
+    const repository = createRepository(demoWithoutConsumption())
+    const user = userEvent.setup()
+    const { queryClient } = renderWithBar(<LancamentosPage />, {
+      repository, route: '/lancamentos',
+    })
+
+    await user.click(await screen.findByRole('button', { name: /^Ana Paula/ }))
+    await user.click(await screen.findByRole('button', { name: 'Lançar Cerveja lata' }))
+    await waitFor(async () => {
+      expect(launchedConsumptions(await repository.getSnapshot())).toHaveLength(1)
+    })
+
+    await repository.setItemActive({ id: 'item-cerveja', active: false })
+    await queryClient.invalidateQueries()
+
+    const snapshot = await repository.getSnapshot()
+    expect(launchedConsumptions(snapshot)).toHaveLength(1)
+    expect(launchedConsumptions(snapshot)[0]).toMatchObject({
+      itemId: 'item-cerveja', unitPriceCents: 700,
+    })
+    // Still named and priced in the day's correction panel, which is the
+    // history the operator actually looks at — and the item is no longer
+    // offered for sale on the same screen.
+    const history = screen.getByRole('region', { name: 'Últimos lançamentos' })
+    expect(within(history).getByText('1× Cerveja lata')).toBeInTheDocument()
+    expect(within(history).getByText('R$ 7,00')).toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: 'Lançar Cerveja lata' }))
+        .not.toBeInTheDocument()
+    })
+  })
 })
