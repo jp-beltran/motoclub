@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -6,6 +6,7 @@ import { AppRouter } from '../../app/AppRouter'
 import { BarTestProviders } from '../../test/bar-test-providers'
 import { createFakeBarRepository } from '../../test/fake-bar-repository'
 import { createBarQueryClient, renderWithBar } from '../../test/render-with-bar'
+import { placeBalloon } from './balloon-placement'
 import { TutorialTour } from './TutorialTour'
 import { TUTORIAL_STEPS } from './tutorial-steps'
 import { markTutorialSeen } from './tutorial-seen'
@@ -84,6 +85,38 @@ describe('TutorialTour first visit', () => {
     renderTour()
 
     expect(balloon()).toHaveTextContent(`Passo 1 de ${TUTORIAL_STEPS.length}`)
+  })
+
+  /**
+   * The screen a step points at is normally not mounted yet when the step
+   * changes: the shell renders a route's content only once the snapshot has
+   * loaded, and a navigating step gets its new screen a commit after the
+   * balloon. Without waiting for the element, the balloon stayed centred
+   * with its target sitting visibly beside it.
+   */
+  it('moves next to its target once that target finally mounts', async () => {
+    renderTour()
+    const dialog = balloon()
+    const viewport = { width: window.innerWidth, height: window.innerHeight }
+    const centered = placeBalloon({ balloonHeight: 0, viewport })
+    const anchored = placeBalloon({
+      // jsdom measures every element as a zero-sized rect at the origin.
+      target: { top: 0, left: 0, width: 0, height: 0 },
+      balloonHeight: 0,
+      viewport,
+    })
+    expect(centered.left).not.toBe(anchored.left)
+    expect(dialog.style.left).toBe(`${centered.left}px`)
+
+    const target = document.createElement('div')
+    target.setAttribute('data-tutorial', String(FIRST_STEP.target))
+    document.body.append(target)
+
+    try {
+      await waitFor(() => expect(dialog.style.left).toBe(`${anchored.left}px`))
+    } finally {
+      target.remove()
+    }
   })
 })
 

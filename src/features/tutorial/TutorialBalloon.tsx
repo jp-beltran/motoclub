@@ -24,6 +24,16 @@ export interface TutorialBalloonProps {
  */
 const WIDTH_CLASS = 'w-[min(360px,calc(100vw-2rem))]'
 
+function isSamePlacement(a: BalloonPlacement | undefined, b: BalloonPlacement): boolean {
+  return (
+    a !== undefined &&
+    a.top === b.top &&
+    a.left === b.left &&
+    a.width === b.width &&
+    a.isCentered === b.isCentered
+  )
+}
+
 const CLOSE_BUTTON_CLASSES =
   'inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-md ' +
   'text-content-muted transition-colors hover:bg-surface-raised hover:text-content-primary ' +
@@ -58,27 +68,49 @@ export function TutorialBalloon({
    * scrolled element is usually the page's own container, not the window).
    */
   useLayoutEffect(() => {
-    function update() {
+    const selector = step.target ? `[data-tutorial="${step.target}"]` : undefined
+
+    /** Places the balloon; answers whether the target was actually there. */
+    function place(): boolean {
       const balloon = balloonRef.current
-      if (!balloon) return
-      const target = step.target
-        ? document.querySelector(`[data-tutorial="${step.target}"]`)
-        : null
-      setPlacement(
-        placeBalloon({
-          target: target?.getBoundingClientRect(),
-          balloonHeight: balloon.getBoundingClientRect().height,
-          viewport: { width: window.innerWidth, height: window.innerHeight },
-        }),
-      )
+      if (!balloon) return false
+      const target = selector ? document.querySelector(selector) : null
+      const next = placeBalloon({
+        target: target?.getBoundingClientRect(),
+        balloonHeight: balloon.getBoundingClientRect().height,
+        viewport: { width: window.innerWidth, height: window.innerHeight },
+      })
+      // Keeping the previous object when nothing moved matters because the
+      // observer below can fire on unrelated DOM changes.
+      setPlacement((current) => (isSamePlacement(current, next) ? current : next))
+      return target !== null
     }
 
-    update()
-    window.addEventListener('resize', update)
-    window.addEventListener('scroll', update, true)
+    const found = place()
+
+    window.addEventListener('resize', place)
+    window.addEventListener('scroll', place, true)
+
+    /**
+     * The screen a step points at is usually not mounted yet at the moment
+     * the step changes: the shell renders a route's content only once the
+     * snapshot has loaded, and a step that navigates gets its new screen a
+     * commit later than this balloon. Without waiting for the element, the
+     * balloon would settle in the middle of the screen and stay there with
+     * its target sitting visibly beside it — which is what it did.
+     */
+    let observer: MutationObserver | undefined
+    if (selector && !found) {
+      observer = new MutationObserver(() => {
+        if (place()) observer?.disconnect()
+      })
+      observer.observe(document.body, { childList: true, subtree: true })
+    }
+
     return () => {
-      window.removeEventListener('resize', update)
-      window.removeEventListener('scroll', update, true)
+      window.removeEventListener('resize', place)
+      window.removeEventListener('scroll', place, true)
+      observer?.disconnect()
     }
   }, [step])
 
