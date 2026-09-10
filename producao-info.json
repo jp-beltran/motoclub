@@ -1,7 +1,7 @@
 {
   "sourceRef": "feat/prototipo-bar",
-  "sourceCommit": "a2e0597af0eb6905533cddce1ef41b9dc998255e",
-  "builtAt": "2026-09-10T16:16:22-03:00",
+  "sourceCommit": "13de834c8c246d49d40784b39068d2a0f239fb71",
+  "builtAt": "2026-09-10T16:48:23-03:00",
   "builtBy": "João Pedro Beltran",
   "nodeVersion": "v24.12.0",
   "buildTZ": "America/Sao_Paulo"
