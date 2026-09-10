@@ -43,6 +43,12 @@ export function ConsumerList({ rows, selectedConsumerId, onSelect }: ConsumerLis
                 {KIND_LABELS[consumer.kind]}
                 {consumer.phone ? ` · ${consumer.phone}` : ''}
               </span>
+              {/* A deactivated consumer stays on this list — with whatever
+                  they still owe — because the debt does not go away with
+                  them. The badge is what keeps the row honest. */}
+              {consumer.active === false ? (
+                <span className="text-sm font-semibold text-warning">Inativo</span>
+              ) : null}
               <span className="text-sm font-medium text-content-primary">
                 {formatCents(outstandingCents)}
               </span>

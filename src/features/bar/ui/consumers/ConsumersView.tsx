@@ -6,15 +6,22 @@ import { Button } from '../../../../shared/ui/Button'
 import { EmptyState } from '../../../../shared/ui/EmptyState'
 import { ConsumerDetail } from './ConsumerDetail'
 import { ConsumerFilters } from './ConsumerFilters'
+import { ConsumerForm } from './ConsumerForm'
 import { ConsumerList } from './ConsumerList'
 import { ALL_CONSUMER_KINDS, filterConsumers, type ConsumerKindFilter } from './consumer-filters'
 import { listConsumerHistory } from './consumer-history'
-import { VisitorQuickForm } from './VisitorQuickForm'
 
 /**
- * `/consumidores`: search and filter every member and visitor, see each
- * one's outstanding total at a glance, register a walk-in visitor on the
- * spot, and drill into one consumer's full consumption history.
+ * `/consumidores`: the club's register. Search and filter every integrante
+ * and visitante, see each one's outstanding total at a glance, register a
+ * new one (either kind, chosen explicitly), correct or deactivate an
+ * existing one, and drill into a full consumption history.
+ *
+ * The walk-in shortcut (`VisitorQuickForm`, which calls `createVisitor`)
+ * stays where it belongs — step 1 of `/lancamentos`, mid-service, when
+ * someone the club has never seen orders a beer. Offering both a shortcut
+ * and the full form on this screen would be two buttons that create the
+ * same thing.
  */
 export function ConsumersView() {
   const snapshotQuery = useBarSnapshot()
@@ -50,15 +57,15 @@ export function ConsumersView() {
           aria-expanded={isRegistering}
           onClick={() => setIsRegistering((current) => !current)}
         >
-          Novo visitante
+          Cadastrar consumidor
         </Button>
       </div>
 
       {isRegistering ? (
-        <VisitorQuickForm
-          onCreated={(visitor) => {
+        <ConsumerForm
+          onCreated={(consumer) => {
             setIsRegistering(false)
-            setSelectedConsumerId(visitor.id)
+            setSelectedConsumerId(consumer.id)
           }}
           onCancel={() => setIsRegistering(false)}
         />
@@ -76,7 +83,7 @@ export function ConsumersView() {
           title="Nenhum consumidor encontrado"
           description={
             snapshot.consumers.length === 0
-              ? 'Cadastre o primeiro visitante para começar.'
+              ? 'Cadastre o primeiro integrante do clube para começar.'
               : 'Ajuste a busca ou o filtro para encontrar um consumidor.'
           }
         />
