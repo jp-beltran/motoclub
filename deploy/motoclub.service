@@ -17,17 +17,25 @@ RestartSec=2
 # ~/.config/motoclub. Nada disso restringe rede porque o servidor já
 # liga só em 127.0.0.1 por padrão (BAR_HOST).
 #
-# Sem PrivateTmp=true de propósito — medido, não suposto, em systemd 255
-# (255.4-1ubuntu8.17, a mesma base do Ubuntu 24.04 que o Mint 22 usa):
-# numa unidade de USUÁRIO com kernel.apparmor_restrict_unprivileged_userns=1
-# (padrão do Ubuntu 24.04/Mint 22), o systemd não consegue montar o
-# namespace que a opção precisa e a IGNORA em silêncio — a unidade sobe
-# normalmente, só que sem o isolamento que a linha promete. Não é um risco
-# de a unidade falhar (ela não falha); é a opção não fazer nada enquanto
-# parece endurecimento para quem lê depois. Numa máquina localhost,
-# monousuário, sem rede, ela também não compraria proteção real mesmo se
-# funcionasse — o app já não expõe nada fora de 127.0.0.1 — então a
-# omitimos em vez de manter uma linha que engana.
+# PrivateTmp=true medido no ALVO, não inferido de outra máquina: Linux
+# Mint 22.3 "zena", systemd 255 (255.4-1ubuntu8.17), numa unidade de
+# USUÁRIO. Uma unidade com a opção subiu (exit 0) e o arquivo que ela
+# criou em /tmp NÃO apareceu no /tmp real — ou seja, o isolamento está
+# ativo de verdade aqui.
+#
+# Registro de uma correção, porque a diferença é instrutiva: numa máquina
+# de desenvolvimento Ubuntu 24.04 esta mesma opção é IGNORADA em silêncio
+# em unidade de usuário, porque lá kernel.apparmor_restrict_unprivileged_userns=1
+# impede o systemd de montar o namespace. No Mint 22.3 esse sysctl é 0, e
+# a opção funciona. Duas bases "Ubuntu 24.04" com comportamento oposto —
+# então a medição que vale é a do alvo.
+#
+# Seguro para este serviço: nada no código de produção usa /tmp
+# (verificado por grep em server/ e scripts/), e o lock que coordena o
+# serviço com history.mjs/restore.sh fica em <banco>.lock, ao lado do
+# banco em ~/.local/share/motoclub — nunca em /tmp. Onde o sysctl estiver
+# em 1, a opção degrada para no-op, não para falha.
+PrivateTmp=true
 NoNewPrivileges=true
 
 [Install]

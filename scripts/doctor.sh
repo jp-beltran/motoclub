@@ -190,8 +190,8 @@ check_node() {
 check_artifacts() {
   section "Artefatos de build ($HOME_DIR)"
   if [ "$DRY_RUN" -eq 1 ]; then
-    plan "dist/index.html e server/dist/server.mjs existem" \
-      "test -f $HOME_DIR/dist/index.html && test -f $HOME_DIR/server/dist/server.mjs"
+    plan "dist/index.html e server/dist/server.mjs existem, e qual build está instalado" \
+      "test -f $HOME_DIR/dist/index.html && test -f $HOME_DIR/server/dist/server.mjs && cat $HOME_DIR/producao-info.json"
     return 0
   fi
 
@@ -201,6 +201,39 @@ check_artifacts() {
     return 0
   fi
   pass "dist/index.html e server/dist/server.mjs presentes"
+
+  # Qual build está instalado. Sem isto, depois de um 'git pull &&
+  # systemctl --user restart motoclub' não há como saber se a versão nova
+  # entrou de fato — e "atualizei mas o problema continua" é
+  # indistinguível de "o pull não pegou".
+  local info="$HOME_DIR/producao-info.json"
+  if [ ! -f "$info" ]; then
+    soft_warn "não achei $info — não dá para dizer qual build está instalado" \
+      "esperado num checkout da branch de produção; se este é um checkout de código-fonte, o serviço pode estar rodando um bundle compilado à mão."
+    return 0
+  fi
+
+  # Um jq de uma linha em bash: nada de dependência nova só para ler três
+  # campos de um JSON que nós mesmos geramos.
+  local commit data
+  commit="$(sed -nE 's/.*"sourceCommit"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' "$info" | head -1)"
+  data="$(sed -nE 's/.*"builtAt"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' "$info" | head -1)"
+
+  if [ -z "$commit" ]; then
+    soft_warn "$info existe mas não tem sourceCommit legível" \
+      "o arquivo é gerado por scripts/publish-producao.sh na máquina de desenvolvimento; se foi editado à mão, refaça a publicação."
+    return 0
+  fi
+
+  pass "build instalado: ${commit:0:9} (compilado em ${data:-data desconhecida})"
+
+  # O bundle é mais novo que o commit? Se alguém compilou na máquina
+  # errada, o artefato e o código deixam de corresponder — e é o
+  # artefato que roda.
+  if [ -n "$(find "$HOME_DIR/server/dist/server.mjs" -newer "$info" 2>/dev/null)" ]; then
+    soft_warn "server/dist/server.mjs é mais novo que $info" \
+      "sinal de bundle compilado localmente por cima do publicado; o que roda é o bundle, não o commit informado acima. Um 'git checkout -- server/dist' ou um pull novo devolve o artefato publicado."
+  fi
 }
 
 # --- 2. Arquivo de segredos -----------------------------------------------------
