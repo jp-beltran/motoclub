@@ -1,7 +1,7 @@
 import type { QueryClient } from '@tanstack/react-query'
 import { renderHook, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi, type MockInstance } from 'vitest'
 
 import { BarTestProviders } from '../../../test/bar-test-providers'
 import { createFakeBarRepository } from '../../../test/fake-bar-repository'
@@ -93,7 +93,9 @@ describe('consumer registry and active event mutations', () => {
     }
   }
 
-  function expectSnapshotInvalidated(invalidateSpy: ReturnType<typeof vi.spyOn>) {
+  function expectSnapshotInvalidated(
+    invalidateSpy: MockInstance<QueryClient['invalidateQueries']>,
+  ) {
     expect(invalidateSpy).toHaveBeenCalledWith(
       expect.objectContaining({ queryKey: barKeys.snapshot }),
     )
