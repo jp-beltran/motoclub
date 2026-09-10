@@ -238,6 +238,53 @@ check_artifacts() {
 
 # --- 2. Arquivo de segredos -----------------------------------------------------
 
+check_update_path() {
+  section "Caminho de atualização (git)"
+  if [ "$DRY_RUN" -eq 1 ]; then
+    plan "git instalado e $HOME_DIR é um checkout da branch de produção" \
+      "command -v git && git -C $HOME_DIR rev-parse --abbrev-ref HEAD"
+    return 0
+  fi
+
+  # Medido no alvo: o Linux Mint 22.3 XFCE **não** traz git instalado.
+  # Isso importa mais do que parece — este script e o install.sh dizem ao
+  # operador "dê git pull na branch de produção" como o jeito de
+  # atualizar. Sem git, essa orientação é impossível de seguir, e a
+  # pessoa descobre isso justamente quando precisa de uma correção.
+  if ! command -v git >/dev/null 2>&1; then
+    problem "git não está instalado — não há como atualizar este sistema" \
+      "rode: sudo apt-get install -y git   (o Mint não traz git por padrão; sem ele, 'git pull' não existe e a única forma de atualizar seria copiar arquivos à mão)"
+    return 0
+  fi
+  pass "git $(git --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1) instalado"
+
+  if ! git -C "$HOME_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    problem "$HOME_DIR não é um checkout git" \
+      "os artefatos chegam por 'git pull' na branch de produção; se esta pasta foi copiada à mão, refaça com: git clone --branch producao <url> '$HOME_DIR'"
+    return 0
+  fi
+
+  local branch remoto
+  # `symbolic-ref --short HEAD` e não `rev-parse --abbrev-ref HEAD`: o
+  # segundo devolve a string literal "HEAD" tanto para HEAD desanexado
+  # quanto para branch sem commit, e aí a mensagem sairia dizendo que a
+  # branch se chama "HEAD". O symbolic-ref falha nesses casos, o que é a
+  # informação que queremos: sem branch, `git pull` não tem o que puxar.
+  remoto="$(git -C "$HOME_DIR" config --get remote.origin.url 2>/dev/null)"
+  if ! branch="$(git -C "$HOME_DIR" symbolic-ref --short HEAD 2>/dev/null)"; then
+    problem "o checkout não está em nenhuma branch (HEAD desanexado)" \
+      "'git pull' não funciona assim. Volte para a branch de produção com: git -C '$HOME_DIR' checkout producao"
+    return 0
+  fi
+
+  if [ "$branch" = "producao" ]; then
+    pass "checkout na branch 'producao' (origem: ${remoto:-desconhecida})"
+  else
+    soft_warn "o checkout está na branch '$branch', não em 'producao'" \
+      "só a branch 'producao' carrega dist/ e server/dist/server.mjs commitados; nas outras o 'git pull' traz código-fonte sem artefato, e este notebook não compila. Troque com: git -C '$HOME_DIR' checkout producao"
+  fi
+}
+
 check_env_file() {
   section "Arquivo de segredos ($ENV_FILE)"
   if [ "$DRY_RUN" -eq 1 ]; then
@@ -706,6 +753,7 @@ echo "Checkout: $HOME_DIR"
 
 check_node
 check_artifacts
+check_update_path
 check_env_file
 check_database
 check_history

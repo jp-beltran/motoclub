@@ -188,6 +188,20 @@ check_preconditions() {
     exit 2
   fi
   ok "artefatos de build encontrados em $HOME_DIR (dist/ e server/dist/server.mjs)"
+
+  # Medido no alvo: o Linux Mint 22.3 XFCE não traz git instalado.
+  # Aviso e não falha, de propósito — se você chegou até aqui os artefatos
+  # existem, então a instalação pode terminar e o bar pode operar. O que
+  # não funciona sem git é a ATUALIZAÇÃO, e é justamente o que este
+  # script e o doctor.sh mandam fazer ("git pull na branch de produção").
+  # Descobrir isso agora, na instalação calma, é muito melhor que
+  # descobrir na noite em que uma correção precisa chegar.
+  if ! command -v git >/dev/null 2>&1; then
+    warn "git não está instalado — a instalação continua, mas não haverá como ATUALIZAR este sistema depois."
+    warn "Resolva com: sudo apt-get install -y git"
+  else
+    ok "git presente ($(git --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)) — o caminho de atualização por 'git pull' existe"
+  fi
 }
 
 # --- Fase 2: Node -------------------------------------------------------------
