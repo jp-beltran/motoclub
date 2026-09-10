@@ -232,11 +232,17 @@ export class LocalBarRepository implements BarRepository {
   /**
    * The guard lives here and not in the private `recordConsumption`
    * deliberately: this is where a *new* charge is created, and a
-   * deactivated consumer takes no new charge. `editConsumptionQuantity`
-   * also goes through `recordConsumption`, but it is a correction of a line
-   * that already exists — refusing that would leave a typo uncorrectable
-   * the moment someone is deactivated, and would hide money rather than
-   * keep it visible.
+   * deactivated consumer takes no new charge.
+   *
+   * The two correction paths are left alone on purpose, because neither
+   * creates money — they move or restate a line that already exists, and
+   * blocking them would leave a mistake uncorrectable the moment someone is
+   * deactivated:
+   *   - `editConsumptionQuantity` also goes through `recordConsumption`,
+   *     but only to replace a line with the quantity it should have had;
+   *   - `reassignConsumption` can still move a line onto a deactivated
+   *     member's open tab, because attributing a consumption to whoever
+   *     actually drank it is a correction, not a new charge.
    */
   async createConsumption(input: CreateConsumptionInput) {
     return this.update((database) => {
