@@ -15,6 +15,9 @@ import type {
   ReassignConsumptionInput,
   RecordPaymentInput,
   SelectActiveEventInput,
+  CreateConsumerInput,
+  UpdateConsumerInput,
+  SetConsumerActiveInput,
 } from '../application/bar-repository'
 import {
   CHARGE_KIND,
@@ -226,8 +229,29 @@ export class LocalBarRepository implements BarRepository {
     })
   }
 
+  /**
+   * The guard lives here and not in the private `recordConsumption`
+   * deliberately: this is where a *new* charge is created, and a
+   * deactivated consumer takes no new charge.
+   *
+   * The two correction paths are left alone on purpose, because neither
+   * creates money — they move or restate a line that already exists, and
+   * blocking them would leave a mistake uncorrectable the moment someone is
+   * deactivated:
+   *   - `editConsumptionQuantity` also goes through `recordConsumption`,
+   *     but only to replace a line with the quantity it should have had;
+   *   - `reassignConsumption` can still move a line onto a deactivated
+   *     member's open tab, because attributing a consumption to whoever
+   *     actually drank it is a correction, not a new charge.
+   */
   async createConsumption(input: CreateConsumptionInput) {
-    return this.update((database) => this.recordConsumption(database, input))
+    return this.update((database) => {
+      assertActiveTabConsumer(
+        database,
+        findById(database.tabs, input.tabId, 'tab-not-found', 'Tab'),
+      )
+      return this.recordConsumption(database, input)
+    })
   }
 
   async cancelConsumption(input: CancelConsumptionRepositoryInput) {
@@ -316,8 +340,14 @@ export class LocalBarRepository implements BarRepository {
       if (database.monthlyClosings.some(({ month }) => month === input.month)) {
         throw new BarError('monthly-closing-already-exists', 'Monthly closing already exists')
       }
+      // Every member, deactivated ones included. A deactivated integrante
+      // takes no new consumption (see `assertActiveTabConsumer`), but the
+      // consumption they already have is still owed, and the closing is
+      // what turns it into the statement `/pagamentos` collects on. Filtering
+      // by `active !== false` here erased that debt from the month it
+      // belonged to — the one thing the ruling says must never happen.
       const memberIds = database.consumers
-        .filter(({ kind, active }) => kind === CONSUMER_KIND.MEMBER && active !== false)
+        .filter(({ kind }) => kind === CONSUMER_KIND.MEMBER)
         .map(({ id }) => id)
       const result = consolidateMonth({
         month: input.month, memberIds, consumptions: database.consumptions,
@@ -347,6 +377,74 @@ export class LocalBarRepository implements BarRepository {
       database.items[itemIndex] = { ...item, stockQuantity }
       database.stockMovements.push(movement)
       return movement
+    })
+  }
+
+  /**
+   * Registers a member **or** a visitor, with the kind given explicitly —
+   * the capability the model always had (`Consumer.kind`) and the system
+   * never exposed. Same `update()` transaction as every other write, so a
+   * refusal saves nothing; same shape `createVisitor` produces, so the two
+   * paths cannot store two different kinds of visitor row.
+   */
+  async createConsumer(input: CreateConsumerInput): Promise<Consumer> {
+    return this.update((database) => {
+      const name = assertConsumerName(input.name)
+      const kind = assertConsumerKind(input.kind)
+      if (kind === CONSUMER_KIND.MEMBER) assertMemberNameAvailable(database, name)
+      const consumer: Consumer = {
+        id: this.dependencies.nextId(),
+        name,
+        kind,
+        ...(input.phone?.trim() ? { phone: input.phone.trim() } : {}),
+        active: true,
+      }
+      database.consumers.push(consumer)
+      return consumer
+    })
+  }
+
+  /** Fixes a mistyped name or phone. Nothing else about a consumer moves. */
+  async updateConsumer(input: UpdateConsumerInput): Promise<Consumer> {
+    return this.update((database) => {
+      const index = findIndexById(
+        database.consumers, input.id, 'consumer-not-found', 'Consumer',
+      )
+      const current = database.consumers[index]
+      const name = input.name === undefined ? current.name : assertConsumerName(input.name)
+      // Only when the name actually moves: a phone-only correction must not
+      // be refused because two integrantes already share a name from before
+      // this rule existed.
+      if (
+        current.kind === CONSUMER_KIND.MEMBER &&
+        normalizeConsumerName(name) !== normalizeConsumerName(current.name)
+      ) {
+        assertMemberNameAvailable(database, name, current.id)
+      }
+      const phone = input.phone === undefined
+        ? current.phone
+        : input.phone.trim() || undefined
+      const updated = withConsumerContact(current, name, phone)
+      database.consumers[index] = updated
+      return updated
+    })
+  }
+
+  /**
+   * Deactivating an integrante who still owes money is allowed — the user's
+   * ruling — so this writes one boolean and touches nothing else: no
+   * consumption is cancelled, no tab is closed, no statement is dropped.
+   * What stops is new consumption (`assertActiveTabConsumer`) and, for a
+   * visitor, opening a new event tab (`ensureEventTab`).
+   */
+  async setConsumerActive(input: SetConsumerActiveInput): Promise<Consumer> {
+    return this.update((database) => {
+      const index = findIndexById(
+        database.consumers, input.id, 'consumer-not-found', 'Consumer',
+      )
+      const updated: Consumer = { ...database.consumers[index], active: input.active }
+      database.consumers[index] = updated
+      return updated
     })
   }
 
@@ -806,4 +904,96 @@ function calculateStockQuantity(current: number, delta: number): number {
     throw new BarError('stock-quantity-overflow', 'Stock quantity must be a safe integer')
   }
   return stockQuantity
+}
+
+/**
+ * The name rule for the whole consumer registry, in the domain and not in a
+ * screen: a name is what is left after trimming, and an empty result is
+ * refused. `createVisitor` keeps its own visitor-worded code, so the two
+ * paths refuse the same input with two sentences that each name the right
+ * thing.
+ */
+function assertConsumerName(value: string): string {
+  const name = value.trim()
+  if (!name) throw new BarError('consumer-name-required', 'Consumer name is required')
+  return name
+}
+
+/**
+ * `kind` is typed, but an RPC caller can send anything. Without this the
+ * bogus row would be caught one layer later by `update()`'s revalidation and
+ * reported as `database-mutation-invalid` — a 500 for what is plainly a bad
+ * request.
+ */
+function assertConsumerKind(value: string): Consumer['kind'] {
+  if (!isOneOf(value, Object.values(CONSUMER_KIND))) {
+    throw new BarError('consumer-kind-invalid', 'Consumer kind must be member or visitor')
+  }
+  return value as Consumer['kind']
+}
+
+/**
+ * Uniqueness of member names, case- and padding-insensitive, in the same
+ * `update()` transaction as the write itself. `exceptId` is how a
+ * correction can re-save the row's own name.
+ *
+ * Members only, on purpose: see the note on `member-name-already-exists` in
+ * `domain/errors.ts`.
+ */
+function assertMemberNameAvailable(
+  database: BarDatabase,
+  name: string,
+  exceptId?: string,
+): void {
+  const wanted = normalizeConsumerName(name)
+  const taken = database.consumers.some((consumer) =>
+    consumer.kind === CONSUMER_KIND.MEMBER && consumer.id !== exceptId &&
+    normalizeConsumerName(consumer.name) === wanted)
+  if (taken) {
+    throw new BarError('member-name-already-exists', 'Member name is already registered')
+  }
+}
+
+/** The same normalisation `ui/consumers/consumer-filters.ts` searches with. */
+function normalizeConsumerName(name: string): string {
+  return name.trim().toLocaleLowerCase('pt-BR')
+}
+
+/**
+ * Rebuilds a consumer with a corrected name and phone. `phone` is written
+ * only when it has content, so clearing it removes the field instead of
+ * storing an empty string — and `active` is copied only when it was stored,
+ * so a correction never invents a flag the row did not have.
+ */
+function withConsumerContact(
+  consumer: Consumer,
+  name: string,
+  phone: string | undefined,
+): Consumer {
+  const contact = { id: consumer.id, name, kind: consumer.kind, ...(phone ? { phone } : {}) }
+  return consumer.active === undefined ? contact : { ...contact, active: consumer.active }
+}
+
+/**
+ * A deactivated consumer takes no new consumption. Enforced here rather
+ * than only by the launch screen's filter, which is a convenience: the rule
+ * has to hold for a direct repository or RPC call too.
+ *
+ * The existing codes say it precisely enough (`consumer-not-active-member` /
+ * `consumer-not-active-visitor`, already used by `ensureMonthlyTab` and
+ * `ensureEventTab`), so no new code — and no new pt-BR sentence — is needed
+ * for the same refusal reached one step later.
+ */
+function assertActiveTabConsumer(database: BarDatabase, tab: Tab): void {
+  if (tab.kind === TAB_KIND.MONTHLY) {
+    const member = findById(database.consumers, tab.memberId, 'consumer-not-found', 'Member')
+    if (member.active === false) {
+      throw new BarError('consumer-not-active-member', INACTIVE_MEMBER_MESSAGE)
+    }
+    return
+  }
+  const visitor = findById(database.consumers, tab.visitorId, 'consumer-not-found', 'Visitor')
+  if (visitor.active === false) {
+    throw new BarError('consumer-not-active-visitor', 'Consumer must be an active visitor')
+  }
 }

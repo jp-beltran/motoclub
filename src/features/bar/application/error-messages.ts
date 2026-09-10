@@ -109,6 +109,13 @@ export const BAR_ERROR_MESSAGES: Readonly<Record<BarErrorCode, string>> = {
   'database-mutation-invalid':
     'A operação deixaria os dados do bar inconsistentes e foi cancelada. ' +
     'Atualize a página e tente novamente.',
+
+  // Cadastro de consumidores. A frase não diz "visitante" nem "integrante"
+  // porque a mesma guarda serve os dois tipos.
+  'consumer-name-required': 'Informe o nome do consumidor.',
+  'consumer-kind-invalid': 'Escolha o tipo do consumidor: integrante ou visitante.',
+  'member-name-already-exists':
+    'Já existe um integrante com esse nome. Use um nome que diferencie os dois.',
 }
 
 /**

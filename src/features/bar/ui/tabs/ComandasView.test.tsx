@@ -52,6 +52,20 @@ describe('ComandasView', () => {
     expect(within(section as HTMLElement).getByText('Parcial')).toBeInTheDocument()
   })
 
+  /**
+   * The event itself is now managed here, above the tabs it owns — until
+   * this, an event could only come from the demo seed. `ActiveEventCard`'s
+   * own tests cover the form; this only proves the screen mounts it with
+   * the running event.
+   */
+  it("shows the night's event above the tabs that belong to it", async () => {
+    renderWithBar(<ComandasView />)
+
+    const card = await screen.findByRole('region', { name: 'Evento ativo' })
+    expect(within(card).getByText(ACTIVE_EVENT_NAME)).toBeInTheDocument()
+    expect(within(card).queryByRole('form', { name: 'Abrir evento' })).not.toBeInTheDocument()
+  })
+
   it('shows an empty state when there is no event tab at all', async () => {
     const repository = createFakeBarRepository(
       {},

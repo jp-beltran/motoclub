@@ -4,7 +4,7 @@ import { BarError, type BarErrorCode } from '../../src/features/bar/domain/error
 /**
  * The literal, frozen allowlist of every method `POST /api/rpc` may call.
  *
- * All 24 methods of `BarRepository`, not only the ~14 the current UI uses:
+ * Every method of `BarRepository`, not only the ones the current UI uses:
  * the repository implements every one of them anyway, and narrowing the
  * list to "what the UI happens to call today" would mean reading intent out
  * of `src/`, which this task must not touch. Two independent guards keep
@@ -49,6 +49,9 @@ export const RPC_METHOD_NAMES = [
   'recordPayment',
   'createMonthlyClosing',
   'addStockMovement',
+  'createConsumer',
+  'updateConsumer',
+  'setConsumerActive',
 ] as const satisfies readonly RpcMethodName[]
 
 // Compile-time exhaustiveness: `never` iff every key of BarRepository is
@@ -125,6 +128,9 @@ const RPC_ARG_SHAPES: Readonly<Record<RpcMethodName, RpcArgShape>> = {
   recordPayment: 'object',
   createMonthlyClosing: 'object',
   addStockMovement: 'object',
+  createConsumer: 'object',
+  updateConsumer: 'object',
+  setConsumerActive: 'object',
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -327,6 +333,14 @@ export const BAR_ERROR_STATUS: Readonly<Record<BarErrorCode, number>> = {
   'stored-data-unsupported-version': 500,
   'stored-data-invalid': 500,
   'database-mutation-invalid': 500,
+
+  // Cadastro de consumidores: validação de entrada do operador (422), e a
+  // unicidade do nome de integrante na mesma família 409 de
+  // `monthly-closing-already-exists` — o pedido não é malformado, ele
+  // conflita com uma linha que já existe.
+  'consumer-name-required': 422,
+  'consumer-kind-invalid': 422,
+  'member-name-already-exists': 409,
 }
 
 /** Resolves any thrown value to the `{ status, code }` pair the wire sends. */

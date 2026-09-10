@@ -46,6 +46,9 @@ export function createFakeBarRepository(
     recordPayment: vi.fn(async () => notImplemented('recordPayment')),
     createMonthlyClosing: vi.fn(async () => notImplemented('createMonthlyClosing')),
     addStockMovement: vi.fn(async () => notImplemented('addStockMovement')),
+    createConsumer: vi.fn(async () => notImplemented('createConsumer')),
+    updateConsumer: vi.fn(async () => notImplemented('updateConsumer')),
+    setConsumerActive: vi.fn(async () => notImplemented('setConsumerActive')),
   }
 
   return { ...defaults, ...overrides }

@@ -826,3 +826,242 @@ describe('LocalBarRepository workflows', () => {
     expect(updated.stockQuantity).toBe(item.stockQuantity! + quantityDelta)
   })
 })
+
+/**
+ * The consumer registry: `createConsumer` (member **or** visitor, kind
+ * given explicitly), `updateConsumer` (fix a typo in a name or a phone)
+ * and `setConsumerActive`. `createVisitor` is deliberately left alone — it
+ * is the launch screen's walk-in shortcut and the tests above still cover
+ * it — so all three are additive, and the only rule they must agree with
+ * it on is asserted below (visitor names may repeat).
+ */
+describe('LocalBarRepository consumer registry', () => {
+  it.each([CONSUMER_KIND.MEMBER, CONSUMER_KIND.VISITOR] as const)(
+    'creates an active %s with a trimmed name and phone',
+    async (kind) => {
+      const { repository } = createRepository()
+
+      const consumer = await repository.createConsumer({
+        name: '  Marcos Silva  ',
+        phone: '  (11) 90000-0000  ',
+        kind,
+      })
+
+      expect(consumer).toEqual({
+        id: 'new-1',
+        name: 'Marcos Silva',
+        kind,
+        phone: '(11) 90000-0000',
+        active: true,
+      })
+      expect(await repository.listConsumers()).toContainEqual(consumer)
+    },
+  )
+
+  it('stores no phone field at all when none is given', async () => {
+    const { repository } = createRepository()
+
+    const consumer = await repository.createConsumer({
+      name: 'Marcos Silva',
+      kind: CONSUMER_KIND.MEMBER,
+    })
+
+    expect(consumer).not.toHaveProperty('phone')
+  })
+
+  it.each([
+    ['empty', ''],
+    ['blank', '   '],
+  ])('refuses an %s name in the domain, not in the screen', async (_label, name) => {
+    const { repository } = createRepository()
+    const before = (await repository.listConsumers()).length
+
+    await expectRejectedBarErrorCode(
+      repository.createConsumer({ name, kind: CONSUMER_KIND.MEMBER }),
+      'consumer-name-required',
+    )
+    expect((await repository.listConsumers()).length).toBe(before)
+  })
+
+  it('refuses a kind that is neither integrante nor visitante', async () => {
+    const { repository } = createRepository()
+
+    await expectRejectedBarErrorCode(
+      repository.createConsumer({
+        name: 'Marcos Silva',
+        kind: 'chefe' as typeof CONSUMER_KIND.MEMBER,
+      }),
+      'consumer-kind-invalid',
+    )
+  })
+
+  it('refuses a second member with the same name, ignoring case and padding', async () => {
+    const { repository } = createRepository()
+
+    await expectRejectedBarErrorCode(
+      repository.createConsumer({ name: '  ana paula ', kind: CONSUMER_KIND.MEMBER }),
+      'member-name-already-exists',
+    )
+  })
+
+  /**
+   * The member roster is a register: two "Ana Paula" integrantes make the
+   * monthly charge ambiguous. Visitors are walk-ins whose names repeat on
+   * purpose — and `createVisitor`, the shortcut this has to agree with, has
+   * never checked — so uniqueness stops at the member roster.
+   */
+  it('lets a visitor share a name with a member and with another visitor', async () => {
+    const { repository } = createRepository()
+
+    const first = await repository.createConsumer({
+      name: 'Ana Paula',
+      kind: CONSUMER_KIND.VISITOR,
+    })
+    const second = await repository.createConsumer({
+      name: 'Ana Paula',
+      kind: CONSUMER_KIND.VISITOR,
+    })
+
+    expect(first.id).not.toBe(second.id)
+    expect(second.name).toBe('Ana Paula')
+  })
+
+  it('corrects a name, keeping kind, phone and the active flag', async () => {
+    const { repository } = createRepository()
+
+    const updated = await repository.updateConsumer({
+      id: 'visitor-rafael',
+      name: '  Rafael Oliveira Souza  ',
+    })
+
+    expect(updated).toEqual({
+      id: 'visitor-rafael',
+      name: 'Rafael Oliveira Souza',
+      kind: CONSUMER_KIND.VISITOR,
+      phone: '(11) 96666-3003',
+      active: true,
+    })
+  })
+
+  it('adds a phone to a consumer that had none', async () => {
+    const { repository } = createRepository()
+
+    const updated = await repository.updateConsumer({
+      id: 'member-celia',
+      phone: ' (11) 95555-4004 ',
+    })
+
+    expect(updated).toMatchObject({ name: 'Célia Martins', phone: '(11) 95555-4004' })
+  })
+
+  it('drops the phone when an empty one is sent, and leaves it alone when none is', async () => {
+    const { repository } = createRepository()
+
+    const cleared = await repository.updateConsumer({ id: 'member-ana', phone: '  ' })
+    expect(cleared).not.toHaveProperty('phone')
+
+    const untouched = await repository.updateConsumer({ id: 'member-bruno', name: 'Bruno Sant' })
+    expect(untouched).toMatchObject({ name: 'Bruno Sant', phone: '(11) 97777-2002' })
+  })
+
+  it('refuses renaming a member onto another member, but not onto its own name', async () => {
+    const { repository } = createRepository()
+
+    await expectRejectedBarErrorCode(
+      repository.updateConsumer({ id: 'member-ana', name: 'Bruno Santos' }),
+      'member-name-already-exists',
+    )
+    expect(await repository.updateConsumer({ id: 'member-ana', name: 'ana paula' }))
+      .toMatchObject({ name: 'ana paula' })
+  })
+
+  it('refuses a blank name on a correction', async () => {
+    const { repository } = createRepository()
+
+    await expectRejectedBarErrorCode(
+      repository.updateConsumer({ id: 'member-ana', name: '   ' }),
+      'consumer-name-required',
+    )
+    expect((await repository.listConsumers()).find(({ id }) => id === 'member-ana')?.name)
+      .toBe('Ana Paula')
+  })
+
+  it('deactivates and reactivates a consumer', async () => {
+    const { repository } = createRepository()
+
+    expect(await repository.setConsumerActive({ id: 'member-ana', active: false }))
+      .toMatchObject({ id: 'member-ana', name: 'Ana Paula', active: false })
+    expect(await repository.setConsumerActive({ id: 'member-ana', active: true }))
+      .toMatchObject({ id: 'member-ana', active: true })
+  })
+
+  it('reports an unknown id as consumer-not-found on every registry write', async () => {
+    const { repository } = createRepository()
+
+    await expectRejectedBarErrorCode(
+      repository.updateConsumer({ id: 'ghost', name: 'Fantasma' }),
+      'consumer-not-found',
+    )
+    await expectRejectedBarErrorCode(
+      repository.setConsumerActive({ id: 'ghost', active: false }),
+      'consumer-not-found',
+    )
+  })
+})
+
+/**
+ * Ruling (decided by the user; not reopened here): deactivating an
+ * integrante who still owes money is **allowed**, and the debt stays
+ * visible. Three consequences, in real cents:
+ *
+ *  1. no new consumption can be launched for them — enforced here, in the
+ *     repository, so the launch screen's filter is a convenience and not
+ *     the rule itself;
+ *  2. the monthly closing still charges them, to the cent;
+ *  3. nothing is erased — the consumption rows survive untouched, and only
+ *     a real payment settles the statement they produce.
+ */
+describe('deactivating a member who still owes money', () => {
+  const ANA_DEBT_CENTS = 3 * 700
+
+  it('blocks new consumption, keeps the debt, and still charges it in the closing', async () => {
+    const { repository } = createRepository()
+    const before = await repository.getSnapshot()
+    expect(
+      before.consumptions.filter(({ consumerId }) => consumerId === 'member-ana'),
+    ).toHaveLength(1)
+
+    await repository.setConsumerActive({ id: 'member-ana', active: false })
+
+    // 1. No new consumption, neither onto the monthly tab that is already
+    //    open nor through a freshly ensured one.
+    await expectRejectedBarErrorCode(
+      repository.createConsumption({
+        tabId: 'tab-ana-mensal', itemId: 'item-cerveja', quantity: 1,
+        chargeKind: CHARGE_KIND.CHARGED, actorId: 'admin',
+      }),
+      'consumer-not-active-member',
+    )
+    await expectRejectedBarErrorCode(
+      repository.ensureMonthlyTab({ memberId: 'member-ana', month: SEED_MONTH }),
+      'consumer-not-active-member',
+    )
+
+    // 3. Nothing was forgiven: every consumption row is exactly as it was.
+    const after = await repository.getSnapshot()
+    expect(after.consumptions).toEqual(before.consumptions)
+
+    // 2. The closing still produces her statement, for the same cents.
+    const consolidation = await repository.createMonthlyClosing({
+      month: SEED_MONTH, actorId: 'admin',
+    })
+    const statement = consolidation.statements.find(({ memberId }) => memberId === 'member-ana')
+    expect(statement).toBeDefined()
+    expect(
+      statement!.consumptions.reduce(
+        (total, { quantity, unitPriceCents }) => total + quantity * unitPriceCents,
+        0,
+      ),
+    ).toBe(ANA_DEBT_CENTS)
+  })
+})

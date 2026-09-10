@@ -1,4 +1,9 @@
-import type { ChargeKind, PaymentTarget, StockMovementKind } from '../domain/constants'
+import type {
+  ChargeKind,
+  ConsumerKind,
+  PaymentTarget,
+  StockMovementKind,
+} from '../domain/constants'
 import type {
   Consumption,
   Consumer,
@@ -84,6 +89,42 @@ export interface AddStockMovementInput {
   readonly quantityDelta: number
   readonly actorId: string
 }
+/**
+ * The consumer registry, added on top of `createVisitor` rather than in
+ * place of it: `createVisitor` is the launch screen's walk-in shortcut,
+ * already covered by tests and by the e2e money flow, and rewriting a path
+ * that handles money for the sake of symmetry is the wrong trade.
+ *
+ * `kind` is explicit here — that is the whole point, since until now the
+ * only consumer the system could register was a visitor.
+ */
+export interface CreateConsumerInput {
+  readonly name: string
+  readonly phone?: string
+  readonly kind: ConsumerKind
+}
+/**
+ * A correction, not a re-registration: `kind` is not editable (it decides
+ * which kind of tab, and therefore which kind of debt, the consumer already
+ * carries) and neither is `active` (see `SetConsumerActiveInput`). An
+ * omitted field is left as it is; `phone: ''` clears the stored phone,
+ * which is how a wrong number gets removed rather than replaced.
+ */
+export interface UpdateConsumerInput {
+  readonly id: string
+  readonly name?: string
+  readonly phone?: string
+}
+/**
+ * Deactivating a consumer who still owes money is allowed on purpose: the
+ * debt stays visible in the monthly closing and on `/pagamentos` until it
+ * is paid. What deactivation does stop is *new* consumption — see
+ * `assertActiveTabConsumer` in `infrastructure/local-bar-repository.ts`.
+ */
+export interface SetConsumerActiveInput {
+  readonly id: string
+  readonly active: boolean
+}
 
 export interface BarRepository {
   getSnapshot(): Promise<BarDatabase>
@@ -110,4 +151,7 @@ export interface BarRepository {
   recordPayment(input: RecordPaymentInput): Promise<Payment>
   createMonthlyClosing(input: CreateMonthlyClosingInput): Promise<MonthlyConsolidation>
   addStockMovement(input: AddStockMovementInput): Promise<StockMovement>
+  createConsumer(input: CreateConsumerInput): Promise<Consumer>
+  updateConsumer(input: UpdateConsumerInput): Promise<Consumer>
+  setConsumerActive(input: SetConsumerActiveInput): Promise<Consumer>
 }

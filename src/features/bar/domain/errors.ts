@@ -99,6 +99,20 @@ export type BarErrorCode =
   | 'stored-data-unsupported-version'
   | 'stored-data-invalid'
   | 'database-mutation-invalid'
+  // Cadastro de consumidores (`createConsumer`, `updateConsumer`).
+  // `visitor-name-required` acima é do atalho `createVisitor` e fala de
+  // visitante; este serve o cadastro que aceita os dois tipos, então a
+  // frase não pode nomear nenhum deles.
+  | 'consumer-name-required'
+  | 'consumer-kind-invalid'
+  /**
+   * Família de unicidade (409, como `monthly-closing-already-exists`).
+   * Só integrantes: dois "Ana Paula" na lista de integrantes tornam a
+   * cobrança mensal ambígua, enquanto visitantes são gente de passagem
+   * cujo nome repete de propósito — e `createVisitor`, o atalho com que
+   * este cadastro tem de concordar, nunca checou.
+   */
+  | 'member-name-already-exists'
 
 /**
  * The subset of the taxonomy raised while reading or writing the stored bar
