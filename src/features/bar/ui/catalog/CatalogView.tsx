@@ -33,7 +33,7 @@ export function CatalogView() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
+      <div data-tutorial="itens">
         <h1 className="text-2xl font-semibold text-content-primary">Itens</h1>
         <p className="mt-1 text-sm text-content-muted">
           Catálogo de itens do bar e situação do estoque.

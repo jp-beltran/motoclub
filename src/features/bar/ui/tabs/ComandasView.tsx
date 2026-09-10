@@ -24,7 +24,7 @@ export function ComandasView() {
 
   return (
     <div className="flex flex-col gap-6">
-      <header>
+      <header data-tutorial="comandas">
         <h1 className="text-2xl font-semibold text-content-primary">Comandas</h1>
         <p className="mt-1 text-sm text-content-muted">
           Comandas de visitante por evento, com total e situação de pagamento.

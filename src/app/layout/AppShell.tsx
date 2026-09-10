@@ -2,6 +2,7 @@ import { Outlet } from 'react-router-dom'
 
 import { getActiveEvent } from '../../features/bar/application/active-event'
 import { useBarSnapshot, useResetDemo } from '../../features/bar/application/queries'
+import { TutorialTour } from '../../features/tutorial/TutorialTour'
 import { Button } from '../../shared/ui/Button'
 import { Sidebar } from './Sidebar'
 import { TopBar } from './TopBar'
@@ -40,6 +41,9 @@ export function AppShell() {
           {snapshotQuery.isSuccess && <Outlet />}
         </main>
       </div>
+      {/* Inside the router (it navigates between steps) and outside <main>
+          (it floats over whichever screen is showing). */}
+      <TutorialTour />
     </div>
   )
 }
