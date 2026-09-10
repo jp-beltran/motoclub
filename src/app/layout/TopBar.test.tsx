@@ -46,6 +46,18 @@ describe('TopBar', () => {
     expect(screen.getByText('Nenhum evento ativo')).toBeInTheDocument()
   })
 
+  /**
+   * Reading "Nenhum evento ativo" on every screen was a dead end while
+   * nothing could open an event. The name is now the way to /comandas,
+   * where the event is opened.
+   */
+  it('links the active event to the screen that manages it', () => {
+    renderTopBar(undefined)
+
+    expect(screen.getByRole('link', { name: /Evento ativo/ }))
+      .toHaveAttribute('href', '/comandas')
+  })
+
   it('shows the current operator name', () => {
     renderTopBar()
 

@@ -1,4 +1,5 @@
 import { HelpCircle } from 'lucide-react'
+import { Link } from 'react-router-dom'
 
 import { CURRENT_ACTOR_NAME } from '../../features/bar/application/actor'
 import { useResetDemo } from '../../features/bar/application/queries'
@@ -35,14 +36,21 @@ export function TopBar({ activeEventName }: TopBarProps) {
 
   return (
     <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border-subtle bg-surface-raised px-4 py-3 md:px-6">
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-wide text-content-muted">
+      {/* The active event is readable from every screen; this makes it
+          reachable too. `/comandas` is where the event is opened and where
+          its visitor tabs are listed, so the name that says "Nenhum evento
+          ativo" is also the way to go and fix that. */}
+      <Link
+        to="/comandas"
+        className="flex min-h-11 flex-col justify-center rounded-md px-2 hover:bg-surface-overlay focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+      >
+        <span className="text-xs font-semibold uppercase tracking-wide text-content-muted">
           Evento ativo
-        </p>
-        <p className="text-sm font-medium text-content-primary">
+        </span>
+        <span className="text-sm font-medium text-content-primary">
           {activeEventName ?? 'Nenhum evento ativo'}
-        </p>
-      </div>
+        </span>
+      </Link>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
         <p className="text-sm text-content-muted">
           Operador: <span className="font-medium text-content-primary">{CURRENT_ACTOR_NAME}</span>

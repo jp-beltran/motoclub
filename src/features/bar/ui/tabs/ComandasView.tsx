@@ -1,9 +1,11 @@
 import { useMutation } from '@tanstack/react-query'
 
 import { EmptyState } from '../../../../shared/ui/EmptyState'
+import { getActiveEvent } from '../../application/active-event'
 import { useBarSnapshot, useInvalidateBar } from '../../application/queries'
 import { useBarRepository } from '../../application/repository-context'
 import { BAR_ERROR_FALLBACKS, describeBarError } from '../../application/error-messages'
+import { ActiveEventCard } from './ActiveEventCard'
 import { isEventActive } from './tab-status'
 import { groupEventTabs } from './event-tab-groups'
 import { TabCard } from './TabCard'
@@ -30,6 +32,13 @@ export function ComandasView() {
           Comandas de visitante por evento, com total e situação de pagamento.
         </p>
       </header>
+
+      {/* The event comes before the tabs it owns: a visitor cannot be
+          charged at all until one is running, and every group below belongs
+          to one. See ActiveEventCard for why this screen is where it goes. */}
+      {snapshotQuery.data ? (
+        <ActiveEventCard event={getActiveEvent(snapshotQuery.data.events)} />
+      ) : null}
 
       {snapshotQuery.isPending ? (
         <p className="text-content-muted">Carregando comandas…</p>
