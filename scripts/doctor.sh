@@ -227,12 +227,28 @@ check_artifacts() {
 
   pass "build instalado: ${commit:0:9} (compilado em ${data:-data desconhecida})"
 
-  # O bundle é mais novo que o commit? Se alguém compilou na máquina
-  # errada, o artefato e o código deixam de corresponder — e é o
-  # artefato que roda.
-  if [ -n "$(find "$HOME_DIR/server/dist/server.mjs" -newer "$info" 2>/dev/null)" ]; then
-    soft_warn "server/dist/server.mjs é mais novo que $info" \
-      "sinal de bundle compilado localmente por cima do publicado; o que roda é o bundle, não o commit informado acima. Um 'git checkout -- server/dist' ou um pull novo devolve o artefato publicado."
+  # Alguém compilou por cima do artefato publicado? Se sim, o commit
+  # impresso acima não é o que roda — e é o artefato que roda.
+  #
+  # Comparado por CONTEÚDO (git), não por data. A primeira versão desta
+  # checagem comparava mtime do bundle com mtime do producao-info.json, e
+  # disparava em toda instalação: medido no alvo, um checkout deixa os
+  # dois arquivos com datas separadas por 2 MILISSEGUNDOS, na ordem em
+  # que o git os gravou, e o bundle costuma sair depois. Um aviso que
+  # aparece sempre é pior que nenhum — ensina o operador a ignorar a
+  # seção inteira.
+  if ! command -v git >/dev/null 2>&1 ||
+     ! git -C "$HOME_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    skip "sem git aqui, não dá para comparar os artefatos com o commit (veja a seção seguinte)"
+    return 0
+  fi
+
+  if git -C "$HOME_DIR" diff --quiet HEAD -- dist server/dist 2>/dev/null; then
+    pass "artefatos idênticos ao commit — o build informado é o que está rodando"
+  else
+    soft_warn "os artefatos em dist/ e/ou server/dist diferem do commit" \
+      "sinal de build feito por cima do publicado; o que roda é o arquivo em disco, não o commit informado acima. Para voltar ao artefato publicado: git -C '$HOME_DIR' checkout -- dist server/dist"
+    git -C "$HOME_DIR" status --porcelain -- dist server/dist 2>/dev/null | head -5 | sed 's/^/           /'
   fi
 }
 

@@ -86,19 +86,27 @@ cat > "$HOME_DIR/producao-info.json" <<'JSON'
   "nodeVersion": "v24.12.0"
 }
 JSON
-touch -d '2026-09-08 18:13:13' "$HOME_DIR/producao-info.json"
-touch -d '2026-09-08 18:13:00' "$HOME_DIR/server/dist/server.mjs"
+git_local() { git -C "$HOME_DIR" -c user.email=t@t -c user.name=teste "$@"; }
+git_local init -q
+git_local add -A >/dev/null 2>&1
+git_local commit -qm "artefatos publicados" >/dev/null 2>&1
+# Datas separadas por milissegundos, na ordem em que um checkout grava —
+# era exatamente isto que fazia a versão por mtime avisar sempre.
+touch "$HOME_DIR/server/dist/server.mjs"
 saida="$(secao_artefatos)"
 assert_contains "informa o commit instalado" "build instalado: 9c653ad73" "$saida"
 assert_contains "informa quando foi compilado" "2026-09-08T18:13:13-03:00" "$saida"
-assert_not_contains "sem aviso de bundle local" "mais novo que" "$saida"
+assert_contains "confirma que o artefato é o do commit" "artefatos idênticos ao commit" "$saida"
+assert_not_contains "NÃO avisa só porque o mtime é mais novo (o falso positivo)" "diferem do commit" "$saida"
 
 echo
 echo "bundle recompilado por cima do publicado: avisa que o commit informado não é o que roda"
-touch "$HOME_DIR/server/dist/server.mjs"
+echo 'console.log("bundle compilado a mao")' > "$HOME_DIR/server/dist/server.mjs"
 saida="$(secao_artefatos)"
-assert_contains "detecta o bundle mais novo" "server/dist/server.mjs é mais novo que" "$saida"
-assert_contains "explica que o que roda é o bundle" "o que roda é o bundle" "$saida"
+assert_contains "detecta o artefato alterado" "diferem do commit" "$saida"
+assert_contains "explica que o que roda é o arquivo em disco" "o que roda é o arquivo em disco" "$saida"
+assert_contains "ensina como voltar ao publicado" "checkout -- dist server/dist" "$saida"
+git_local checkout -q -- server/dist
 
 echo
 echo "producao-info.json corrompido: avisa em vez de imprimir campo vazio"
