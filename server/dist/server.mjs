@@ -555,8 +555,29 @@ var LocalBarRepository = class {
       return event;
     });
   }
+  /**
+   * The guard lives here and not in the private `recordConsumption`
+   * deliberately: this is where a *new* charge is created, and a
+   * deactivated consumer takes no new charge.
+   *
+   * The two correction paths are left alone on purpose, because neither
+   * creates money — they move or restate a line that already exists, and
+   * blocking them would leave a mistake uncorrectable the moment someone is
+   * deactivated:
+   *   - `editConsumptionQuantity` also goes through `recordConsumption`,
+   *     but only to replace a line with the quantity it should have had;
+   *   - `reassignConsumption` can still move a line onto a deactivated
+   *     member's open tab, because attributing a consumption to whoever
+   *     actually drank it is a correction, not a new charge.
+   */
   async createConsumption(input) {
-    return this.update((database) => this.recordConsumption(database, input));
+    return this.update((database) => {
+      assertActiveTabConsumer(
+        database,
+        findById(database.tabs, input.tabId, "tab-not-found", "Tab")
+      );
+      return this.recordConsumption(database, input);
+    });
   }
   async cancelConsumption(input) {
     return this.update((database) => this.cancelConsumptionInDatabase(database, input));
@@ -647,7 +668,7 @@ var LocalBarRepository = class {
       if (database.monthlyClosings.some(({ month }) => month === input.month)) {
         throw new BarError("monthly-closing-already-exists", "Monthly closing already exists");
       }
-      const memberIds = database.consumers.filter(({ kind, active }) => kind === CONSUMER_KIND.MEMBER && active !== false).map(({ id }) => id);
+      const memberIds = database.consumers.filter(({ kind }) => kind === CONSUMER_KIND.MEMBER).map(({ id }) => id);
       const result = consolidateMonth({
         month: input.month,
         memberIds,
@@ -680,6 +701,144 @@ var LocalBarRepository = class {
       database.items[itemIndex] = { ...item, stockQuantity };
       database.stockMovements.push(movement);
       return movement;
+    });
+  }
+  /**
+   * Registers a member **or** a visitor, with the kind given explicitly —
+   * the capability the model always had (`Consumer.kind`) and the system
+   * never exposed. Same `update()` transaction as every other write, so a
+   * refusal saves nothing; same shape `createVisitor` produces, so the two
+   * paths cannot store two different kinds of visitor row.
+   */
+  async createConsumer(input) {
+    return this.update((database) => {
+      const name = assertConsumerName(input.name);
+      const kind = assertConsumerKind(input.kind);
+      if (kind === CONSUMER_KIND.MEMBER) assertMemberNameAvailable(database, name);
+      const consumer = {
+        id: this.dependencies.nextId(),
+        name,
+        kind,
+        ...input.phone?.trim() ? { phone: input.phone.trim() } : {},
+        active: true
+      };
+      database.consumers.push(consumer);
+      return consumer;
+    });
+  }
+  /** Fixes a mistyped name or phone. Nothing else about a consumer moves. */
+  async updateConsumer(input) {
+    return this.update((database) => {
+      const index = findIndexById(
+        database.consumers,
+        input.id,
+        "consumer-not-found",
+        "Consumer"
+      );
+      const current = database.consumers[index];
+      const name = input.name === void 0 ? current.name : assertConsumerName(input.name);
+      if (current.kind === CONSUMER_KIND.MEMBER && normalizeConsumerName(name) !== normalizeConsumerName(current.name)) {
+        assertMemberNameAvailable(database, name, current.id);
+      }
+      const phone = input.phone === void 0 ? current.phone : input.phone.trim() || void 0;
+      const updated = withConsumerContact(current, name, phone);
+      database.consumers[index] = updated;
+      return updated;
+    });
+  }
+  /**
+   * Registers a catalogue item. Same shape as `createVisitor`: validate the
+   * caller's fields, build the entity, push it, and let `update`'s
+   * clone → mutate → revalidate → save cycle refuse anything that would
+   * leave the database inconsistent.
+   *
+   * Sem `stockQuantity`, o item nasce sem controle de estoque e lê como
+   * "Estoque não controlado" em vez de alegar um zero que ninguém contou.
+   * COM `stockQuantity`, ele nasce controlado nessa contagem de abertura e
+   * já aparece em `/estoque` aceitando movimento — antes disso, um item
+   * cadastrado pela tela nunca conseguia ter estoque, porque
+   * `getTrackedItems` filtra por esse campo e `addStockMovement` recusava
+   * com `item-stock-not-tracked`.
+   */
+  async createItem(input) {
+    return this.update((database) => {
+      const item = {
+        id: this.dependencies.nextId(),
+        name: readItemName(input.name),
+        ...optionalText("code", input.code),
+        ...optionalText("category", input.category),
+        ...optionalText("unit", input.unit),
+        active: true,
+        favorite: input.favorite ?? false,
+        // `?? {}` e não `stockQuantity: undefined`: a diferença entre "o
+        // campo não existe" e "existe valendo undefined" é exatamente o que
+        // `getTrackedItems` lê para decidir se o item tem controle de estoque.
+        ...input.stockQuantity === void 0 ? {} : { stockQuantity: readItemStockQuantity(input.stockQuantity) },
+        unitCostCents: readItemCostCents(input.unitCostCents),
+        unitPriceCents: readItemPriceCents(input.unitPriceCents)
+      };
+      database.items.push(item);
+      return item;
+    });
+  }
+  /**
+   * Rewrites the item, never its history. Changing the price replaces
+   * `items[i].unitPriceCents` and nothing else: past consumption keeps the
+   * `unitPriceCents` it copied at the moment of sale, so no already-recorded
+   * money moves. `item-price-history.test.ts` is the test that keeps this
+   * true.
+   */
+  async updateItem(input) {
+    return this.update((database) => {
+      const index = findIndexById(database.items, input.id, "item-not-found", "Item");
+      const current = database.items[index];
+      const updated = normalizeOptionalText({
+        ...current,
+        ...input.name === void 0 ? {} : { name: readItemName(input.name) },
+        ...input.code === void 0 ? {} : { code: input.code },
+        ...input.category === void 0 ? {} : { category: input.category },
+        ...input.unit === void 0 ? {} : { unit: input.unit },
+        ...input.favorite === void 0 ? {} : { favorite: input.favorite },
+        ...input.unitCostCents === void 0 ? {} : { unitCostCents: readItemCostCents(input.unitCostCents) },
+        ...input.unitPriceCents === void 0 ? {} : { unitPriceCents: readItemPriceCents(input.unitPriceCents) }
+      });
+      database.items[index] = updated;
+      return updated;
+    });
+  }
+  /**
+   * Deactivating an integrante who still owes money is allowed — the user's
+   * ruling — so this writes one boolean and touches nothing else: no
+   * consumption is cancelled, no tab is closed, no statement is dropped.
+   * What stops is new consumption (`assertActiveTabConsumer`) and, for a
+   * visitor, opening a new event tab (`ensureEventTab`).
+   */
+  async setConsumerActive(input) {
+    return this.update((database) => {
+      const index = findIndexById(
+        database.consumers,
+        input.id,
+        "consumer-not-found",
+        "Consumer"
+      );
+      const updated = { ...database.consumers[index], active: input.active };
+      database.consumers[index] = updated;
+      return updated;
+    });
+  }
+  /**
+   * Retiring an item is a flag, never a deletion: `/lancamentos` hides an
+   * inactive item (`LaunchScreen` filters `active !== false`) while every
+   * consumption that already names it stays exactly where it is, in the
+   * history and in the month's totals. Deleting the row instead would break
+   * `hasValidRelationships`, which is the structural reason this is a flag.
+   */
+  async setItemActive(input) {
+    return this.update((database) => {
+      const index = findIndexById(database.items, input.id, "item-not-found", "Item");
+      const updated = { ...database.items[index], active: input.active };
+      database.items[index] = updated;
+      return updated;
     });
   }
   async setVisitorTabStatus(tabId, status) {
@@ -1036,6 +1195,89 @@ function calculateStockQuantity(current, delta) {
   }
   return stockQuantity;
 }
+function assertConsumerName(value) {
+  const name = value.trim();
+  if (!name) throw new BarError("consumer-name-required", "Consumer name is required");
+  return name;
+}
+function assertConsumerKind(value) {
+  if (!isOneOf(value, Object.values(CONSUMER_KIND))) {
+    throw new BarError("consumer-kind-invalid", "Consumer kind must be member or visitor");
+  }
+  return value;
+}
+function assertMemberNameAvailable(database, name, exceptId) {
+  const wanted = normalizeConsumerName(name);
+  const taken = database.consumers.some((consumer) => consumer.kind === CONSUMER_KIND.MEMBER && consumer.id !== exceptId && normalizeConsumerName(consumer.name) === wanted);
+  if (taken) {
+    throw new BarError("member-name-already-exists", "Member name is already registered");
+  }
+}
+function normalizeConsumerName(name) {
+  return name.trim().toLocaleLowerCase("pt-BR");
+}
+function withConsumerContact(consumer, name, phone) {
+  const contact = { id: consumer.id, name, kind: consumer.kind, ...phone ? { phone } : {} };
+  return consumer.active === void 0 ? contact : { ...contact, active: consumer.active };
+}
+function assertActiveTabConsumer(database, tab) {
+  if (tab.kind === TAB_KIND.MONTHLY) {
+    const member = findById(database.consumers, tab.memberId, "consumer-not-found", "Member");
+    if (member.active === false) {
+      throw new BarError("consumer-not-active-member", INACTIVE_MEMBER_MESSAGE);
+    }
+    return;
+  }
+  const visitor = findById(database.consumers, tab.visitorId, "consumer-not-found", "Visitor");
+  if (visitor.active === false) {
+    throw new BarError("consumer-not-active-visitor", "Consumer must be an active visitor");
+  }
+}
+function readItemName(name) {
+  const trimmed = name.trim();
+  if (!trimmed) throw new BarError("item-name-required", "Item name is required");
+  return trimmed;
+}
+function readItemPriceCents(unitPriceCents) {
+  if (!Number.isSafeInteger(unitPriceCents) || unitPriceCents < 0) {
+    throw new BarError(
+      "item-price-invalid",
+      "Item price must use non-negative safe integer cents"
+    );
+  }
+  return unitPriceCents;
+}
+function readItemStockQuantity(stockQuantity) {
+  if (!Number.isSafeInteger(stockQuantity) || stockQuantity < 0) {
+    throw new BarError(
+      "item-stock-quantity-invalid",
+      "Item stock quantity must be a non-negative safe integer"
+    );
+  }
+  return stockQuantity;
+}
+function readItemCostCents(unitCostCents) {
+  if (!Number.isSafeInteger(unitCostCents) || unitCostCents < 0) {
+    throw new BarError(
+      "item-cost-invalid",
+      "Item cost must use non-negative safe integer cents"
+    );
+  }
+  return unitCostCents;
+}
+function optionalText(key, value) {
+  const trimmed = value?.trim();
+  return trimmed ? { [key]: trimmed } : {};
+}
+function normalizeOptionalText(item) {
+  const { code, category, unit, ...rest } = item;
+  return {
+    ...rest,
+    ...optionalText("code", code),
+    ...optionalText("category", category),
+    ...optionalText("unit", unit)
+  };
+}
 
 // server/config.ts
 import { homedir } from "node:os";
@@ -1170,7 +1412,13 @@ var RPC_METHOD_NAMES = [
   "reopenVisitorTab",
   "recordPayment",
   "createMonthlyClosing",
-  "addStockMovement"
+  "addStockMovement",
+  "createConsumer",
+  "updateConsumer",
+  "setConsumerActive",
+  "createItem",
+  "updateItem",
+  "setItemActive"
 ];
 var RPC_METHODS = new Set(RPC_METHOD_NAMES);
 function isRpcMethod(method) {
@@ -1208,7 +1456,13 @@ var RPC_ARG_SHAPES = {
   reopenVisitorTab: "string",
   recordPayment: "object",
   createMonthlyClosing: "object",
-  addStockMovement: "object"
+  addStockMovement: "object",
+  createConsumer: "object",
+  updateConsumer: "object",
+  setConsumerActive: "object",
+  createItem: "object",
+  updateItem: "object",
+  setItemActive: "object"
 };
 function isPlainObject(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -1304,7 +1558,21 @@ var BAR_ERROR_STATUS = {
   "stored-data-malformed": 500,
   "stored-data-unsupported-version": 500,
   "stored-data-invalid": 500,
-  "database-mutation-invalid": 500
+  "database-mutation-invalid": 500,
+  // Cadastro de consumidores: validação de entrada do operador (422), e a
+  // unicidade do nome de integrante na mesma família 409 de
+  // `monthly-closing-already-exists` — o pedido não é malformado, ele
+  // conflita com uma linha que já existe.
+  "consumer-name-required": 422,
+  "consumer-kind-invalid": 422,
+  "member-name-already-exists": 409,
+  // Cadastro de itens — recusa de domínio sobre o que o cliente mandou
+  // (nome vazio, preço/custo negativo ou fracionário), então 422 como as
+  // outras validações de entrada.
+  "item-name-required": 422,
+  "item-price-invalid": 422,
+  "item-cost-invalid": 422,
+  "item-stock-quantity-invalid": 422
 };
 function statusForRpcError(error) {
   if (error instanceof BarError) {
