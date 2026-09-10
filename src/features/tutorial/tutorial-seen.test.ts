@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { TUTORIAL_SEEN_KEY, hasSeenTutorial, markTutorialSeen } from './tutorial-seen'
+import { hasSeenTutorial, markTutorialSeen } from './tutorial-seen'
+import { TUTORIAL_SEEN_KEY } from './tutorial-storage'
 
 afterEach(() => {
   window.localStorage.clear()

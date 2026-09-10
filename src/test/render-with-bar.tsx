@@ -3,7 +3,8 @@ import { render, type RenderResult } from '@testing-library/react'
 import type { ReactElement } from 'react'
 
 import type { BarRepository } from '../features/bar/application/bar-repository'
-import { TUTORIAL_SEEN_KEY, markTutorialSeen } from '../features/tutorial/tutorial-seen'
+import { markTutorialSeen } from '../features/tutorial/tutorial-seen'
+import { TUTORIAL_SEEN_KEY } from '../features/tutorial/tutorial-storage'
 import { BarTestProviders } from './bar-test-providers'
 import { createFakeBarRepository } from './fake-bar-repository'
 
