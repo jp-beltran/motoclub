@@ -118,12 +118,15 @@ ensure_sudo() {
     return 0
   fi
   # Se o sudo já está liberado (senha em cache, ou NOPASSWD), não há nada
-  # a explicar nem a pedir. `sudo -n -v` antes de `sudo -v` porque o
-  # `sudo -v` sozinho EXIGE senha e terminal mesmo para um usuário
-  # NOPASSWD — medido: numa sessão sem TTY ele falha com "a terminal is
-  # required to read the password", e com `set -e` isso derruba a
-  # instalação inteira antes de chegar ao serviço.
-  if sudo -n -v 2>/dev/null; then
+  # a explicar nem a pedir.
+  #
+  # O probe é `sudo -n true`, um comando inofensivo — e não `sudo -n -v`.
+  # Medido: o `-v` VALIDA as credenciais, e NOPASSWD isenta apenas a
+  # execução de comandos, não a validação; então `sudo -v` exige senha e
+  # terminal mesmo para um usuário NOPASSWD, e falha com "a terminal is
+  # required to read the password". Com `set -e`, isso derrubava a
+  # instalação inteira antes de chegar ao linger e ao logind.
+  if sudo -n true 2>/dev/null; then
     return 0
   fi
 
