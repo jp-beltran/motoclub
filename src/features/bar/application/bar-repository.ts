@@ -126,6 +126,44 @@ export interface SetConsumerActiveInput {
   readonly active: boolean
 }
 
+/**
+ * Money arrives here already in integer cents: the parse from what the
+ * operator typed ("12,50") happens once, at the edge, in
+ * `shared/format.ts#parseCentsInput`. Nothing below this line ever sees a
+ * decimal string, and nothing anywhere multiplies or rounds a float.
+ */
+export interface CreateItemInput {
+  readonly name: string
+  readonly unitPriceCents: number
+  readonly unitCostCents: number
+  readonly category?: string
+  readonly unit?: string
+  readonly code?: string
+  readonly favorite?: boolean
+}
+/**
+ * Every field but `id` is optional and means "change this one". A field left
+ * out keeps its stored value; a text field given as blank/whitespace clears
+ * it, which is the only way to unset a code or category typed by mistake.
+ *
+ * Changing `unitPriceCents`/`unitCostCents` is safe by construction and not
+ * by convention: a consumption copies both at the moment of sale (see
+ * `ConsumptionBase` in `domain/entities.ts`), so a new price prices the next
+ * sale and never rewrites one already recorded. That guarantee is locked
+ * down by `infrastructure/item-price-history.test.ts`.
+ */
+export interface UpdateItemInput {
+  readonly id: string
+  readonly name?: string
+  readonly unitPriceCents?: number
+  readonly unitCostCents?: number
+  readonly category?: string
+  readonly unit?: string
+  readonly code?: string
+  readonly favorite?: boolean
+}
+export interface SetItemActiveInput { readonly id: string; readonly active: boolean }
+
 export interface BarRepository {
   getSnapshot(): Promise<BarDatabase>
   listConsumers(): Promise<Consumer[]>
@@ -154,4 +192,7 @@ export interface BarRepository {
   createConsumer(input: CreateConsumerInput): Promise<Consumer>
   updateConsumer(input: UpdateConsumerInput): Promise<Consumer>
   setConsumerActive(input: SetConsumerActiveInput): Promise<Consumer>
+  createItem(input: CreateItemInput): Promise<Item>
+  updateItem(input: UpdateItemInput): Promise<Item>
+  setItemActive(input: SetItemActiveInput): Promise<Item>
 }

@@ -13,7 +13,7 @@ import { BarError, type BarErrorCode } from '../../src/features/bar/domain/error
  *   1. `RpcMethodName` is declared as `keyof BarRepository`, so a typo here
  *      fails `tsc` immediately (not a name the port has).
  *   2. `AssertNoMissingRpcMethod` below fails `tsc` if the port ever grows a
- *      25th method and this array is not updated to include it — the same
+ *      28th method and this array is not updated to include it — the same
  *      "a new one breaks the build until classified" guarantee the task
  *      asks for on the error-status map.
  *
@@ -52,6 +52,9 @@ export const RPC_METHOD_NAMES = [
   'createConsumer',
   'updateConsumer',
   'setConsumerActive',
+  'createItem',
+  'updateItem',
+  'setItemActive',
 ] as const satisfies readonly RpcMethodName[]
 
 // Compile-time exhaustiveness: `never` iff every key of BarRepository is
@@ -131,6 +134,9 @@ const RPC_ARG_SHAPES: Readonly<Record<RpcMethodName, RpcArgShape>> = {
   createConsumer: 'object',
   updateConsumer: 'object',
   setConsumerActive: 'object',
+  createItem: 'object',
+  updateItem: 'object',
+  setItemActive: 'object',
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -223,7 +229,7 @@ export async function invokeRpcMethod(
 }
 
 /**
- * Exhaustive `Record<BarErrorCode, number>` — adding a 44th code to the
+ * Exhaustive `Record<BarErrorCode, number>` — adding a 47th code to the
  * domain taxonomy without adding a line here fails `tsc`, the same
  * guarantee `application/error-messages.ts` gives the pt-BR message table.
  *
@@ -341,6 +347,12 @@ export const BAR_ERROR_STATUS: Readonly<Record<BarErrorCode, number>> = {
   'consumer-name-required': 422,
   'consumer-kind-invalid': 422,
   'member-name-already-exists': 409,
+  // Cadastro de itens — recusa de domínio sobre o que o cliente mandou
+  // (nome vazio, preço/custo negativo ou fracionário), então 422 como as
+  // outras validações de entrada.
+  'item-name-required': 422,
+  'item-price-invalid': 422,
+  'item-cost-invalid': 422,
 }
 
 /** Resolves any thrown value to the `{ status, code }` pair the wire sends. */

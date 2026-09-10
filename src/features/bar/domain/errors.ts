@@ -113,6 +113,12 @@ export type BarErrorCode =
    * este cadastro tem de concordar, nunca checou.
    */
   | 'member-name-already-exists'
+  // Cadastro de itens (o catálogo do bar). Preço e custo têm códigos
+  // separados de propósito: o operador precisa saber *qual* dos dois campos
+  // foi recusado, e `money-amount-invalid` não sabe dizer.
+  | 'item-name-required'
+  | 'item-price-invalid'
+  | 'item-cost-invalid'
 
 /**
  * The subset of the taxonomy raised while reading or writing the stored bar

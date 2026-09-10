@@ -5,6 +5,7 @@ import type {
   BarRepository,
   CancelConsumptionRepositoryInput,
   CreateConsumptionInput,
+  CreateItemInput,
   CreateMonthlyClosingInput,
   CreateVisitorInput,
   EditConsumptionQuantityInput,
@@ -18,6 +19,8 @@ import type {
   CreateConsumerInput,
   UpdateConsumerInput,
   SetConsumerActiveInput,
+  SetItemActiveInput,
+  UpdateItemInput,
 } from '../application/bar-repository'
 import {
   CHARGE_KIND,
@@ -431,6 +434,68 @@ export class LocalBarRepository implements BarRepository {
   }
 
   /**
+   * Registers a catalogue item. Same shape as `createVisitor`: validate the
+   * caller's fields, build the entity, push it, and let `update`'s
+   * clone → mutate → revalidate → save cycle refuse anything that would
+   * leave the database inconsistent.
+   *
+   * A new item is born `active: true` and with **no** `stockQuantity`, so it
+   * reads as "Estoque não controlado" everywhere instead of claiming a stock
+   * of zero it was never counted into. See the report's note: `/estoque`
+   * (`getTrackedItems`, `addStockMovement`'s `item-stock-not-tracked`) only
+   * knows items that already carry the field, so an item registered here
+   * cannot receive stock entries until the port grows a way to opt in.
+   */
+  async createItem(input: CreateItemInput): Promise<Item> {
+    return this.update((database) => {
+      const item: Item = {
+        id: this.dependencies.nextId(),
+        name: readItemName(input.name),
+        ...optionalText('code', input.code),
+        ...optionalText('category', input.category),
+        ...optionalText('unit', input.unit),
+        active: true,
+        favorite: input.favorite ?? false,
+        unitCostCents: readItemCostCents(input.unitCostCents),
+        unitPriceCents: readItemPriceCents(input.unitPriceCents),
+      }
+      database.items.push(item)
+      return item
+    })
+  }
+
+  /**
+   * Rewrites the item, never its history. Changing the price replaces
+   * `items[i].unitPriceCents` and nothing else: past consumption keeps the
+   * `unitPriceCents` it copied at the moment of sale, so no already-recorded
+   * money moves. `item-price-history.test.ts` is the test that keeps this
+   * true.
+   */
+  async updateItem(input: UpdateItemInput): Promise<Item> {
+    return this.update((database) => {
+      const index = findIndexById(database.items, input.id, 'item-not-found', 'Item')
+      const current = database.items[index]
+      // Spread over `current` rather than field-by-field, so a field `Item`
+      // grows later keeps surviving an edit instead of being silently
+      // dropped by a merge that never heard of it.
+      const updated = normalizeOptionalText({
+        ...current,
+        ...(input.name === undefined ? {} : { name: readItemName(input.name) }),
+        ...(input.code === undefined ? {} : { code: input.code }),
+        ...(input.category === undefined ? {} : { category: input.category }),
+        ...(input.unit === undefined ? {} : { unit: input.unit }),
+        ...(input.favorite === undefined ? {} : { favorite: input.favorite }),
+        ...(input.unitCostCents === undefined
+          ? {} : { unitCostCents: readItemCostCents(input.unitCostCents) }),
+        ...(input.unitPriceCents === undefined
+          ? {} : { unitPriceCents: readItemPriceCents(input.unitPriceCents) }),
+      })
+      database.items[index] = updated
+      return updated
+    })
+  }
+
+  /**
    * Deactivating an integrante who still owes money is allowed — the user's
    * ruling — so this writes one boolean and touches nothing else: no
    * consumption is cancelled, no tab is closed, no statement is dropped.
@@ -444,6 +509,22 @@ export class LocalBarRepository implements BarRepository {
       )
       const updated: Consumer = { ...database.consumers[index], active: input.active }
       database.consumers[index] = updated
+      return updated
+    })
+  }
+
+  /**
+   * Retiring an item is a flag, never a deletion: `/lancamentos` hides an
+   * inactive item (`LaunchScreen` filters `active !== false`) while every
+   * consumption that already names it stays exactly where it is, in the
+   * history and in the month's totals. Deleting the row instead would break
+   * `hasValidRelationships`, which is the structural reason this is a flag.
+   */
+  async setItemActive(input: SetItemActiveInput): Promise<Item> {
+    return this.update((database) => {
+      const index = findIndexById(database.items, input.id, 'item-not-found', 'Item')
+      const updated: Item = { ...database.items[index], active: input.active }
+      database.items[index] = updated
       return updated
     })
   }
@@ -995,5 +1076,71 @@ function assertActiveTabConsumer(database: BarDatabase, tab: Tab): void {
   const visitor = findById(database.consumers, tab.visitorId, 'consumer-not-found', 'Visitor')
   if (visitor.active === false) {
     throw new BarError('consumer-not-active-visitor', 'Consumer must be an active visitor')
+  }
+  }
+
+function readItemName(name: string): string {
+  const trimmed = name.trim()
+  if (!trimmed) throw new BarError('item-name-required', 'Item name is required')
+  return trimmed
+}
+
+/**
+ * Price and cost are checked separately, with a code each, because the
+ * operator has to be told *which* field was refused. The rule itself is the
+ * one `hasSafeCents` enforces on every stored item — a non-negative safe
+ * integer number of cents — so a value this accepts can never make an item
+ * that `isItem` would later reject as corrupt.
+ */
+function readItemPriceCents(unitPriceCents: number): number {
+  if (!Number.isSafeInteger(unitPriceCents) || unitPriceCents < 0) {
+    throw new BarError(
+      'item-price-invalid', 'Item price must use non-negative safe integer cents',
+    )
+  }
+  return unitPriceCents
+}
+
+function readItemCostCents(unitCostCents: number): number {
+  if (!Number.isSafeInteger(unitCostCents) || unitCostCents < 0) {
+    throw new BarError(
+      'item-cost-invalid', 'Item cost must use non-negative safe integer cents',
+    )
+  }
+  return unitCostCents
+}
+
+/**
+ * `{ code: 'BEV-001' }` for text worth keeping, `{}` for blank — never
+ * `{ code: '' }`. An empty string would sort and filter as a real code in
+ * `/itens` and print as one in the table; absent is what "no code" means in
+ * `Item`, whose optional fields the catalogue already renders as "—".
+ */
+function optionalText<Key extends string>(
+  key: Key,
+  value: string | undefined,
+): Partial<Record<Key, string>> {
+  const trimmed = value?.trim()
+  return trimmed ? ({ [key]: trimmed } as Partial<Record<Key, string>>) : {}
+}
+
+/**
+ * Rebuilds an item with its three free-text fields put through the same
+ * "blank means absent" rule, dropping the key entirely where the value is
+ * empty or whitespace.
+ *
+ * `updateItem` needs this because a blank value there means "clear it", and
+ * merging it as `{ code: '' }` or `{ code: undefined }` would leave the key
+ * present — which `isItem` accepts but `JSON.stringify` then drops on save,
+ * so the row read back would differ from the row just returned. `...rest`
+ * carries every other field through untouched.
+ */
+function normalizeOptionalText(item: Item): Item {
+  const { code, category, unit, ...rest } = item
+  return {
+    ...rest,
+    ...optionalText('code', code),
+    ...optionalText('category', category),
+    ...optionalText('unit', unit),
   }
 }

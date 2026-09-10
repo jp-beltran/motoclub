@@ -116,6 +116,12 @@ export const BAR_ERROR_MESSAGES: Readonly<Record<BarErrorCode, string>> = {
   'consumer-kind-invalid': 'Escolha o tipo do consumidor: integrante ou visitante.',
   'member-name-already-exists':
     'Já existe um integrante com esse nome. Use um nome que diferencie os dois.',
+  'item-name-required': 'Informe o nome do item.',
+  'item-price-invalid':
+    'O preço de venda precisa ser um valor válido, sem centavos quebrados e ' +
+    'nunca negativo.',
+  'item-cost-invalid':
+    'O custo precisa ser um valor válido, sem centavos quebrados e nunca negativo.',
 }
 
 /**
@@ -131,6 +137,7 @@ export const BAR_ERROR_FALLBACKS = {
   tab: 'Não foi possível atualizar a comanda. Tente novamente.',
   monthlyClosing: 'Não foi possível fechar o mês. Tente novamente.',
   resetDemo: 'Não foi possível restaurar a demonstração. Tente novamente.',
+  item: 'Não foi possível salvar o item. Tente novamente.',
 } as const satisfies Readonly<Record<string, string>>
 
 /**

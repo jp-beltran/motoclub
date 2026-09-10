@@ -49,6 +49,9 @@ export function createFakeBarRepository(
     createConsumer: vi.fn(async () => notImplemented('createConsumer')),
     updateConsumer: vi.fn(async () => notImplemented('updateConsumer')),
     setConsumerActive: vi.fn(async () => notImplemented('setConsumerActive')),
+    createItem: vi.fn(async () => notImplemented('createItem')),
+    updateItem: vi.fn(async () => notImplemented('updateItem')),
+    setItemActive: vi.fn(async () => notImplemented('setItemActive')),
   }
 
   return { ...defaults, ...overrides }

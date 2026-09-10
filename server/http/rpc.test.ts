@@ -12,7 +12,7 @@ import {
 
 describe('RPC_METHOD_NAMES', () => {
   it('lists exactly the 27 methods of the BarRepository port', () => {
-    expect(RPC_METHOD_NAMES).toHaveLength(27)
+    expect(RPC_METHOD_NAMES).toHaveLength(30)
   })
 
   it('has no duplicate names', () => {

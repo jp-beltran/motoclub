@@ -1065,3 +1065,143 @@ describe('deactivating a member who still owes money', () => {
     ).toBe(ANA_DEBT_CENTS)
   })
 })
+
+/**
+ * Registering the real catalogue: the club's own drinks, with the club's own
+ * price and cost. Every guard asserted here lives in the domain, not in a
+ * screen — the negative price below is refused by a repository call, with no
+ * form in sight.
+ */
+describe('LocalBarRepository item registration', () => {
+  it('creates an active item with integer cents, defaulting favorite to false', async () => {
+    const { repository } = createRepository()
+
+    const item = await repository.createItem({
+      name: 'Cerveja artesanal',
+      unitPriceCents: 1250,
+      unitCostCents: 700,
+      category: 'Bebidas',
+      unit: 'garrafa',
+      code: 'BEV-900',
+    })
+
+    expect(item).toEqual({
+      id: 'new-1',
+      name: 'Cerveja artesanal',
+      code: 'BEV-900',
+      category: 'Bebidas',
+      unit: 'garrafa',
+      active: true,
+      favorite: false,
+      unitPriceCents: 1250,
+      unitCostCents: 700,
+    })
+    expect(await repository.listItems()).toContainEqual(item)
+  })
+
+  it('trims text and omits an optional field left blank', async () => {
+    const { repository } = createRepository()
+
+    const item = await repository.createItem({
+      name: '  Água com gás  ',
+      unitPriceCents: 400,
+      unitCostCents: 150,
+      category: '   ',
+      code: '',
+      favorite: true,
+    })
+
+    expect(item.name).toBe('Água com gás')
+    expect(item.favorite).toBe(true)
+    expect('category' in item).toBe(false)
+    expect('code' in item).toBe(false)
+  })
+
+  it.each([
+    ['a blank name', { name: '   ' }, 'item-name-required'],
+    ['a negative price', { unitPriceCents: -1 }, 'item-price-invalid'],
+    ['a fractional price', { unitPriceCents: 12.5 }, 'item-price-invalid'],
+    ['a negative cost', { unitCostCents: -1 }, 'item-cost-invalid'],
+    ['a fractional cost', { unitCostCents: 7.5 }, 'item-cost-invalid'],
+  ] satisfies readonly (readonly [string, object, BarErrorCode])[])(
+    'refuses %s on create, without writing anything',
+    async (_name, overrides, code) => {
+      const { repository, storage } = createRepository()
+      await repository.getSnapshot()
+      const writesBefore = storage.writes
+
+      await expectRejectedBarErrorCode(
+        repository.createItem({
+          name: 'Item novo', unitPriceCents: 700, unitCostCents: 350, ...overrides,
+        }),
+        code,
+      )
+      expect(storage.writes).toBe(writesBefore)
+    },
+  )
+
+  it('updates only the fields it was given, price and cost included', async () => {
+    const { repository } = createRepository()
+
+    const updated = await repository.updateItem({
+      id: 'item-cerveja', unitPriceCents: 900, unitCostCents: 400,
+    })
+
+    expect(updated).toMatchObject({
+      id: 'item-cerveja',
+      name: 'Cerveja lata',
+      code: 'BEV-001',
+      unitPriceCents: 900,
+      unitCostCents: 400,
+      stockQuantity: 42,
+    })
+  })
+
+  it('clears an optional field when given a blank value', async () => {
+    const { repository } = createRepository()
+
+    const updated = await repository.updateItem({ id: 'item-cerveja', code: '  ' })
+
+    expect('code' in updated).toBe(false)
+    expect((await repository.listItems()).find(({ id }) => id === 'item-cerveja')).toEqual(updated)
+  })
+
+  it.each([
+    ['a negative price', { unitPriceCents: -500 }, 'item-price-invalid'],
+    ['a negative cost', { unitCostCents: -500 }, 'item-cost-invalid'],
+    ['a blank name', { name: '' }, 'item-name-required'],
+  ] satisfies readonly (readonly [string, object, BarErrorCode])[])(
+    'refuses %s on update, leaving the stored price alone',
+    async (_name, overrides, code) => {
+      const { repository } = createRepository()
+
+      await expectRejectedBarErrorCode(
+        repository.updateItem({ id: 'item-cerveja', ...overrides }),
+        code,
+      )
+      expect((await repository.listItems()).find(({ id }) => id === 'item-cerveja'))
+        .toMatchObject({ unitPriceCents: 700, unitCostCents: 350 })
+    },
+  )
+
+  it('deactivates and reactivates an item', async () => {
+    const { repository } = createRepository()
+
+    const deactivated = await repository.setItemActive({ id: 'item-cerveja', active: false })
+    expect(deactivated.active).toBe(false)
+
+    const reactivated = await repository.setItemActive({ id: 'item-cerveja', active: true })
+    expect(reactivated.active).toBe(true)
+  })
+
+  it.each([
+    ['updateItem', (repository: LocalBarRepository) =>
+      repository.updateItem({ id: 'item-fantasma', unitPriceCents: 100 })],
+    ['setItemActive', (repository: LocalBarRepository) =>
+      repository.setItemActive({ id: 'item-fantasma', active: false })],
+  ] as const)('reports item-not-found from %s for an unknown id', async (_name, call) => {
+    const { repository } = createRepository()
+
+    await expectRejectedBarErrorCode(call(repository), 'item-not-found')
+  })
+})
