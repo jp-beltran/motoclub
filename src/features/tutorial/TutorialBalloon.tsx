@@ -165,11 +165,22 @@ export function TutorialBalloon({
           {`Passo ${stepNumber} de ${stepCount}`}
         </p>
         <div className="flex gap-2">
-          <Button variant="ghost" className="px-3" onClick={onPrevious}>
+          {/* Desabilitado no primeiro passo em vez de só não fazer nada: um
+              botão que parece clicável e ignora o toque é o oposto do que
+              este app promete em toda tela. */}
+          <Button
+            variant="ghost"
+            className="px-3"
+            onClick={onPrevious}
+            disabled={stepNumber === 1}
+          >
             Anterior
           </Button>
+          {/* No último passo este botão ENCERRA o tutorial, então ele diz
+              isso. Rotular de "Próximo" algo que fecha a janela faz o
+              operador achar que perdeu um passo. */}
           <Button variant="primary" className="px-3" onClick={onNext}>
-            Próximo
+            {stepNumber === stepCount ? 'Concluir' : 'Próximo'}
           </Button>
         </div>
       </div>

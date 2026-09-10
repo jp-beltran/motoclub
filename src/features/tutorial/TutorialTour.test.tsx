@@ -193,7 +193,23 @@ describe('TutorialTour navigation between steps', () => {
     expect(balloon()).toHaveTextContent(`Passo 1 de ${TUTORIAL_STEPS.length}`)
   })
 
-  it('ends the tutorial when "Próximo" is pressed on the last step', async () => {
+  it('disables "Anterior" on the first step instead of ignoring the press', async () => {
+    const user = userEvent.setup()
+    renderTour()
+
+    const anterior = within(balloon()).getByRole('button', { name: 'Anterior' })
+    expect(anterior).toBeDisabled()
+
+    // E continua no passo 1 — um botão desabilitado não pode navegar.
+    await user.click(anterior)
+    expect(balloon()).toHaveTextContent(`Passo 1 de ${TUTORIAL_STEPS.length}`)
+
+    // No segundo passo ele volta a valer.
+    await user.click(within(balloon()).getByRole('button', { name: 'Próximo' }))
+    expect(within(balloon()).getByRole('button', { name: 'Anterior' })).toBeEnabled()
+  })
+
+  it('ends the tutorial when "Concluir" is pressed on the last step', async () => {
     const user = userEvent.setup()
     renderTour()
 
@@ -202,7 +218,10 @@ describe('TutorialTour navigation between steps', () => {
     }
     expect(balloon()).toHaveTextContent(LAST_STEP.title)
 
-    await user.click(within(balloon()).getByRole('button', { name: 'Próximo' }))
+    // O último passo encerra, então o botão diz "Concluir": chamá-lo de
+    // "Próximo" faria o operador achar que perdeu um passo.
+    expect(within(balloon()).queryByRole('button', { name: 'Próximo' })).not.toBeInTheDocument()
+    await user.click(within(balloon()).getByRole('button', { name: 'Concluir' }))
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
@@ -222,13 +241,14 @@ describe('TutorialTour closing', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
-  it('remembers the tutorial as seen after ending it with "Próximo" on the last step', async () => {
+  it('remembers the tutorial as seen after ending it with "Concluir" on the last step', async () => {
     const user = userEvent.setup()
     const first = renderTour()
 
-    for (let step = 0; step < TUTORIAL_STEPS.length; step += 1) {
+    for (let step = 1; step < TUTORIAL_STEPS.length; step += 1) {
       await user.click(within(balloon()).getByRole('button', { name: 'Próximo' }))
     }
+    await user.click(within(balloon()).getByRole('button', { name: 'Concluir' }))
     first.unmount()
 
     remountTourWithStoredPreference()
