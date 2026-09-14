@@ -146,12 +146,13 @@ function recordConsumption(input, dependencies) {
   if (input.tab.status === TAB_STATUS.CLOSED) {
     throw new BarError("tab-closed", CLOSED_TAB_MESSAGE);
   }
+  const pricing = resolvePricing(input);
   assertPositiveIntegerQuantity(input.quantity);
-  assertNonNegativeCents(input.item.unitPriceCents);
-  assertNonNegativeCents(input.item.unitCostCents);
-  multiplyCents(input.item.unitPriceCents, input.quantity);
-  multiplyCents(input.item.unitCostCents, input.quantity);
-  const consumption = createConsumption(input, dependencies);
+  assertNonNegativeCents(pricing.unitPriceCents);
+  assertNonNegativeCents(pricing.unitCostCents);
+  multiplyCents(pricing.unitPriceCents, input.quantity);
+  multiplyCents(pricing.unitCostCents, input.quantity);
+  const consumption = createConsumption(input, pricing, dependencies);
   if (input.item.stockQuantity === void 0) {
     return { consumption, warnings: [] };
   }
@@ -161,7 +162,13 @@ function recordConsumption(input, dependencies) {
     warnings: input.quantity > input.item.stockQuantity ? [STOCK_WARNING.INSUFFICIENT] : []
   };
 }
-function createConsumption(input, dependencies) {
+function resolvePricing(input) {
+  return input.pricing ?? {
+    unitPriceCents: input.item.unitPriceCents,
+    unitCostCents: input.item.unitCostCents
+  };
+}
+function createConsumption(input, pricing, dependencies) {
   return {
     id: dependencies.nextId(),
     tabId: input.tab.id,
@@ -170,8 +177,8 @@ function createConsumption(input, dependencies) {
     status: CONSUMPTION_STATUS.ACTIVE,
     chargeKind: input.chargeKind,
     quantity: input.quantity,
-    unitPriceCents: input.item.unitPriceCents,
-    unitCostCents: input.item.unitCostCents,
+    unitPriceCents: pricing.unitPriceCents,
+    unitCostCents: pricing.unitCostCents,
     createdAt: dependencies.now(),
     actorId: input.actorId
   };
@@ -591,13 +598,27 @@ var LocalBarRepository = class {
         "Consumption"
       );
       const cancellation = this.cancelConsumptionInDatabase(database, input);
-      const replacementResult = this.recordConsumption(database, {
-        tabId: current.tabId,
-        itemId: current.itemId,
-        quantity: input.quantity,
-        chargeKind: current.chargeKind,
-        actorId: input.actorId
-      });
+      const replacementResult = this.recordConsumption(
+        database,
+        {
+          tabId: current.tabId,
+          itemId: current.itemId,
+          quantity: input.quantity,
+          chargeKind: current.chargeKind,
+          actorId: input.actorId
+        },
+        // The money of the line being corrected, not the item's money today.
+        // This looks redundant — the item already has a price — and it is
+        // exactly the redundancy the product depends on: correcting "3
+        // beers, not 4" a week after a supplier increase must move the
+        // quantity and nothing else. Without it the replacement is priced as
+        // a brand-new sale and the member is charged a price the club never
+        // sold them. Locked down by `item-price-history.test.ts`.
+        {
+          unitPriceCents: current.unitPriceCents,
+          unitCostCents: current.unitCostCents
+        }
+      );
       return {
         ...replacementResult,
         cancelledConsumption: cancellation.consumption,
@@ -867,7 +888,15 @@ var LocalBarRepository = class {
       (tab) => tab.kind === TAB_KIND.MONTHLY && tab.month === month && tab.status === TAB_STATUS.OPEN ? { ...tab, status: TAB_STATUS.CLOSED, closedAt } : tab
     );
   }
-  recordConsumption(database, input) {
+  /**
+   * `pricing` is a parameter of its own rather than a field of `input` on
+   * purpose: `input` is the caller's object, forwarded straight off the wire
+   * by `POST /api/rpc`, and an extra field survives JSON. Were `pricing` part
+   * of `CreateConsumptionInput`, an RPC caller could name its own price on a
+   * brand-new sale and charge whatever it liked. Only the correction path
+   * inside this class can reach this argument.
+   */
+  recordConsumption(database, input, pricing) {
     if (!Number.isSafeInteger(input.quantity) || input.quantity <= 0) {
       throw new BarError(
         "consumption-quantity-invalid",
@@ -883,7 +912,8 @@ var LocalBarRepository = class {
       item,
       quantity: input.quantity,
       chargeKind: input.chargeKind,
-      actorId: input.actorId
+      actorId: input.actorId,
+      ...pricing ? { pricing } : {}
     }, this.dependencies);
     database.consumptions.push(result.consumption);
     if (result.stockMovement) {
@@ -2268,8 +2298,8 @@ function installShutdownHandlers(server, driver, dbPath) {
 async function main() {
   const config = loadConfig(process.env, { staticDir: defaultStaticDir() });
   const { server, driver } = await bootServer(config);
-  console.log(`motoclub bar server listening on http://${config.host}:${config.port}`);
   installShutdownHandlers(server, driver, config.dbPath);
+  console.log(`motoclub bar server listening on http://${config.host}:${config.port}`);
 }
 function isEntryPoint() {
   const entry = process.argv[1];
