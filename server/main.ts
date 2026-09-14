@@ -351,8 +351,36 @@ export function installShutdownHandlers(server: http.Server, driver: SqlDriver, 
 async function main(): Promise<void> {
   const config = loadConfig(process.env, { staticDir: defaultStaticDir() })
   const { server, driver } = await bootServer(config)
-  console.log(`motoclub bar server listening on http://${config.host}:${config.port}`)
+  // Handlers BEFORE the log, and the order is load-bearing rather than
+  // cosmetic. Until `process.on('SIGTERM', ...)` has run, the signal still
+  // has its default disposition, which terminates the process outright —
+  // no `shutdown()`, so the SQLite connection is never closed and the lock
+  // file (`writeLockFile`, already written by `bootServer`) is left behind
+  // naming a pid that no longer exists. The next boot, or a restore run
+  // through scripts/history.mjs, then has to reason about a stale lock that
+  // a clean shutdown would simply have removed.
+  //
+  // Being two adjacent *synchronous* statements is not protection, which is
+  // the counter-intuitive part worth writing down: a signal is delivered by
+  // the kernel at an arbitrary instruction boundary, not as an event-loop
+  // callback. Node only turns SIGTERM into a queued JS callback once a
+  // listener exists; until then the default disposition applies and the
+  // process is simply terminated, mid-statement if need be. So the window is
+  // the wall-clock time between the stdout write becoming visible to whoever
+  // is watching and this `process.on` executing — microseconds, but a reader
+  // that signals the moment it sees the line lands inside it routinely.
+  //
+  // Measured against the built bundle (25 forks, SIGTERM sent on the
+  // "listening on" chunk with no intervening work): with the log first, 19
+  // of 25 died by signal and each of those 19 left the lock file behind;
+  // with this order, 25 of 25 exited 0 and left no lock. `main.test.ts`
+  // covers the same path but performs several filesystem calls between
+  // reading the line and killing, so the child usually wins the race there —
+  // which is why it only surfaced as an occasional `expected null to be +0`
+  // (an exit code of `null` is Node reporting "killed by signal") rather
+  // than as a reliable failure.
   installShutdownHandlers(server, driver, config.dbPath)
+  console.log(`motoclub bar server listening on http://${config.host}:${config.port}`)
 }
 
 /**
