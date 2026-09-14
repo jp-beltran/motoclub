@@ -37,7 +37,11 @@ import {
   CANCELLATION_BLOCK_REASONS,
   findCancellationBlock,
 } from '../domain/cancellation'
-import { cancelConsumption, recordConsumption } from '../domain/consumption'
+import {
+  cancelConsumption,
+  recordConsumption,
+  type ConsumptionPricing,
+} from '../domain/consumption'
 import {
   BarError,
   isBarError,
@@ -269,13 +273,27 @@ export class LocalBarRepository implements BarRepository {
         database.consumptions, input.consumptionId, 'consumption-not-found', 'Consumption',
       )
       const cancellation = this.cancelConsumptionInDatabase(database, input)
-      const replacementResult = this.recordConsumption(database, {
-        tabId: current.tabId,
-        itemId: current.itemId,
-        quantity: input.quantity,
-        chargeKind: current.chargeKind,
-        actorId: input.actorId,
-      })
+      const replacementResult = this.recordConsumption(
+        database,
+        {
+          tabId: current.tabId,
+          itemId: current.itemId,
+          quantity: input.quantity,
+          chargeKind: current.chargeKind,
+          actorId: input.actorId,
+        },
+        // The money of the line being corrected, not the item's money today.
+        // This looks redundant — the item already has a price — and it is
+        // exactly the redundancy the product depends on: correcting "3
+        // beers, not 4" a week after a supplier increase must move the
+        // quantity and nothing else. Without it the replacement is priced as
+        // a brand-new sale and the member is charged a price the club never
+        // sold them. Locked down by `item-price-history.test.ts`.
+        {
+          unitPriceCents: current.unitPriceCents,
+          unitCostCents: current.unitCostCents,
+        },
+      )
       return {
         ...replacementResult,
         cancelledConsumption: cancellation.consumption,
@@ -566,7 +584,19 @@ export class LocalBarRepository implements BarRepository {
     )
   }
 
-  private recordConsumption(database: BarDatabase, input: CreateConsumptionInput) {
+  /**
+   * `pricing` is a parameter of its own rather than a field of `input` on
+   * purpose: `input` is the caller's object, forwarded straight off the wire
+   * by `POST /api/rpc`, and an extra field survives JSON. Were `pricing` part
+   * of `CreateConsumptionInput`, an RPC caller could name its own price on a
+   * brand-new sale and charge whatever it liked. Only the correction path
+   * inside this class can reach this argument.
+   */
+  private recordConsumption(
+    database: BarDatabase,
+    input: CreateConsumptionInput,
+    pricing?: ConsumptionPricing,
+  ) {
     if (!Number.isSafeInteger(input.quantity) || input.quantity <= 0) {
       throw new BarError(
         'consumption-quantity-invalid', 'Consumption quantity must be a positive safe integer',
@@ -581,7 +611,7 @@ export class LocalBarRepository implements BarRepository {
     // possible causes and is not unambiguously a persistence fault.
     const result = recordConsumption({
       tab, item, quantity: input.quantity, chargeKind: input.chargeKind,
-      actorId: input.actorId,
+      actorId: input.actorId, ...(pricing ? { pricing } : {}),
     }, this.dependencies)
     database.consumptions.push(result.consumption)
     if (result.stockMovement) {

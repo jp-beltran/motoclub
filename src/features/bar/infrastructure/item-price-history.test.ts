@@ -199,3 +199,155 @@ describe('retiring an item hides it from launching without erasing its sales', (
     expect(items.map(({ id }) => id)).toContain(item.id)
   })
 })
+
+/**
+ * The same guarantee, on the two paths that CORRECT a launch instead of
+ * creating one.
+ *
+ * The cases above only cover a sale and a reprice side by side. That left
+ * the hole this block closes: `editConsumptionQuantity` does not edit
+ * anything in place — it cancels the line and records a replacement — so
+ * unless the replacement is told otherwise it is priced like any new sale,
+ * at the item's price *today*. Fixing "3 beers, not 4" a week after the
+ * supplier raised the price silently re-priced the whole line, charging a
+ * member money the club never sold them, with nothing on screen saying so.
+ *
+ * A correction is not a sale. It restates a line that already exists, so it
+ * must carry the money that line was recorded with.
+ */
+describe('correcting a quantity never re-prices the sale', () => {
+  it('gives the replacement the original unit price, not the item price of today', async () => {
+    const repository = createRepository()
+    const month = getCurrentMonth(SALE_DAY)
+    const item = await repository.createItem({
+      name: 'Cerveja lata', unitPriceCents: 700, unitCostCents: 350,
+    })
+    const tab = await repository.ensureMonthlyTab({ memberId: 'member-ana', month })
+    const { consumption } = await repository.createConsumption({
+      tabId: tab.id, itemId: item.id, quantity: 3,
+      chargeKind: CHARGE_KIND.CHARGED, actorId: 'admin',
+    })
+
+    // The supplier raised the price between the sale and the correction.
+    await repository.updateItem({ id: item.id, unitPriceCents: 900, unitCostCents: 500 })
+
+    const { replacement } = await repository.editConsumptionQuantity({
+      consumptionId: consumption.id, quantity: 4, actorId: 'admin',
+    })
+
+    expect(replacement.quantity).toBe(4)
+    expect(replacement.unitPriceCents).toBe(700)
+    // 4 × R$ 7,00 — what the club actually sold — and never 4 × R$ 9,00.
+    expect(getConsumptionLineTotalCents(replacement)).toBe(2800)
+  })
+
+  it('gives the replacement the original unit cost, so the margin of the month does not move either', async () => {
+    const repository = createRepository()
+    const month = getCurrentMonth(SALE_DAY)
+    const item = await repository.createItem({
+      name: 'Espetinho', unitPriceCents: 1200, unitCostCents: 500,
+    })
+    const tab = await repository.ensureMonthlyTab({ memberId: 'member-bruno', month })
+    const { consumption } = await repository.createConsumption({
+      tabId: tab.id, itemId: item.id, quantity: 2,
+      chargeKind: CHARGE_KIND.CHARGED, actorId: 'admin',
+    })
+
+    await repository.updateItem({ id: item.id, unitCostCents: 800 })
+
+    const { replacement } = await repository.editConsumptionQuantity({
+      consumptionId: consumption.id, quantity: 3, actorId: 'admin',
+    })
+
+    expect(replacement.unitCostCents).toBe(500)
+  })
+
+  it('moves the month by exactly the quantity corrected, at the price actually sold', async () => {
+    const repository = createRepository()
+    const month = getCurrentMonth(SALE_DAY)
+    const item = await repository.createItem({
+      name: 'Refrigerante', unitPriceCents: 600, unitCostCents: 280,
+    })
+    const tab = await repository.ensureMonthlyTab({ memberId: 'member-celia', month })
+    const { consumption } = await repository.createConsumption({
+      tabId: tab.id, itemId: item.id, quantity: 2,
+      chargeKind: CHARGE_KIND.CHARGED, actorId: 'admin',
+    })
+    const before = summarizeDashboard(await repository.getSnapshot(), month)
+
+    await repository.updateItem({ id: item.id, unitPriceCents: 650, unitCostCents: 300 })
+    await repository.editConsumptionQuantity({
+      consumptionId: consumption.id, quantity: 3, actorId: 'admin',
+    })
+
+    // One more unit, at the 600/280 the line was recorded with. Measured as a
+    // delta because the demo seed already sold things this month.
+    const after = summarizeDashboard(await repository.getSnapshot(), month)
+    expect(after.revenueCents).toBe(before.revenueCents + 600)
+    expect(after.costCents).toBe(before.costCents + 280)
+  })
+
+  it('still prices a brand-new sale of the same item with the new price', async () => {
+    const repository = createRepository()
+    const month = getCurrentMonth(SALE_DAY)
+    const item = await repository.createItem({
+      name: 'Água mineral', unitPriceCents: 400, unitCostCents: 150,
+    })
+    const tab = await repository.ensureMonthlyTab({ memberId: 'member-ana', month })
+    const { consumption } = await repository.createConsumption({
+      tabId: tab.id, itemId: item.id, quantity: 1,
+      chargeKind: CHARGE_KIND.CHARGED, actorId: 'admin',
+    })
+
+    await repository.updateItem({ id: item.id, unitPriceCents: 500, unitCostCents: 200 })
+    const { replacement } = await repository.editConsumptionQuantity({
+      consumptionId: consumption.id, quantity: 2, actorId: 'admin',
+    })
+    const fresh = await repository.createConsumption({
+      tabId: tab.id, itemId: item.id, quantity: 1,
+      chargeKind: CHARGE_KIND.CHARGED, actorId: 'admin',
+    })
+
+    // The correction keeps the old price; the next real sale takes the new
+    // one. Without this pair, "inherit the original" could be implemented as
+    // "ignore updateItem entirely" and still look correct.
+    expect(replacement.unitPriceCents).toBe(400)
+    expect(fresh.consumption.unitPriceCents).toBe(500)
+    expect(fresh.consumption.unitCostCents).toBe(200)
+  })
+})
+
+/**
+ * `reassignConsumption` moves the stored row (it rewrites `tabId` and
+ * `consumerId` and nothing else) rather than recreating it, so it should
+ * already be immune to a reprice. "Should" is the reason these exist:
+ * attributing a drink to whoever actually drank it must not be a way to
+ * change what it cost, and a future refactor that unified the two
+ * correction paths onto one "cancel and re-record" helper would break this
+ * silently.
+ */
+describe('moving a launch to another consumer never re-prices it', () => {
+  it('keeps the price and the cost of the sale after the item is repriced', async () => {
+    const repository = createRepository()
+    const month = getCurrentMonth(SALE_DAY)
+    const item = await repository.createItem({
+      name: 'Porção de fritas', unitPriceCents: 2200, unitCostCents: 900,
+    })
+    const source = await repository.ensureMonthlyTab({ memberId: 'member-ana', month })
+    const target = await repository.ensureMonthlyTab({ memberId: 'member-bruno', month })
+    const { consumption } = await repository.createConsumption({
+      tabId: source.id, itemId: item.id, quantity: 1,
+      chargeKind: CHARGE_KIND.CHARGED, actorId: 'admin',
+    })
+
+    await repository.updateItem({ id: item.id, unitPriceCents: 2500, unitCostCents: 1100 })
+    const moved = await repository.reassignConsumption({
+      consumptionId: consumption.id, targetTabId: target.id,
+    })
+
+    expect(moved.tabId).toBe(target.id)
+    expect(moved.unitPriceCents).toBe(2200)
+    expect(moved.unitCostCents).toBe(900)
+    expect(getConsumptionLineTotalCents(moved)).toBe(2200)
+  })
+})
