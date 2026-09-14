@@ -26,12 +26,43 @@ const CONSUMPTION_ITEM_MISMATCH_MESSAGE = 'Consumption and item must match'
 const STOCK_MOVEMENT_MISMATCH_MESSAGE =
   'Original stock movement must match the consumption and item'
 
+/**
+ * The money a consumption is recorded with. Always copied onto the
+ * consumption itself (see `ConsumptionBase` in `entities.ts`), never read
+ * back off the item afterwards — that copy is what lets a price be edited
+ * without rewriting a sale the club already made.
+ */
+export interface ConsumptionPricing {
+  readonly unitPriceCents: number
+  readonly unitCostCents: number
+}
+
 export interface RecordConsumptionInput {
   readonly tab: Tab
   readonly item: Item
   readonly quantity: number
   readonly chargeKind: ChargeKind
   readonly actorId: string
+  /**
+   * The price and cost to record this line at, when they are **not** the
+   * item's current ones. Absent — the normal case, a real sale — the item's
+   * own price and cost are copied, which is what makes an edit in `/itens`
+   * apply from the next sale onwards.
+   *
+   * Present only on a CORRECTION. `editConsumptionQuantity` does not edit a
+   * consumption in place: it cancels the line and records a replacement, so
+   * without this the replacement would be priced like any new sale, at the
+   * item's price *today*. Fixing "3 beers, not 4" after a supplier increase
+   * would then silently re-price the whole line and charge a member money
+   * the club never sold them. A correction restates a line that already
+   * exists; it must carry the money that line was recorded with.
+   *
+   * This is deliberately NOT reachable from `BarRepository`'s own
+   * `CreateConsumptionInput`: a caller who could name its own price on a
+   * new sale could charge anything. Only the repository's internal
+   * correction path passes it — see `LocalBarRepository#recordConsumption`.
+   */
+  readonly pricing?: ConsumptionPricing
 }
 
 export interface ConsumptionResult {
@@ -60,13 +91,18 @@ export function recordConsumption(
     throw new BarError('tab-closed', CLOSED_TAB_MESSAGE)
   }
 
-  assertPositiveIntegerQuantity(input.quantity)
-  assertNonNegativeCents(input.item.unitPriceCents)
-  assertNonNegativeCents(input.item.unitCostCents)
-  multiplyCents(input.item.unitPriceCents, input.quantity)
-  multiplyCents(input.item.unitCostCents, input.quantity)
+  // Resolved once, and every money guard below runs on the resolved values
+  // rather than on `input.item` — otherwise a correction could validate the
+  // item's current price and then record a different one.
+  const pricing = resolvePricing(input)
 
-  const consumption = createConsumption(input, dependencies)
+  assertPositiveIntegerQuantity(input.quantity)
+  assertNonNegativeCents(pricing.unitPriceCents)
+  assertNonNegativeCents(pricing.unitCostCents)
+  multiplyCents(pricing.unitPriceCents, input.quantity)
+  multiplyCents(pricing.unitCostCents, input.quantity)
+
+  const consumption = createConsumption(input, pricing, dependencies)
 
   if (input.item.stockQuantity === undefined) {
     return { consumption, warnings: [] }
@@ -82,8 +118,23 @@ export function recordConsumption(
   }
 }
 
+/**
+ * The item's own money, unless the caller is correcting an existing line and
+ * supplied the money that line was recorded with. The single place the two
+ * cases are told apart, so nothing downstream has to ask again.
+ */
+function resolvePricing(input: RecordConsumptionInput): ConsumptionPricing {
+  return (
+    input.pricing ?? {
+      unitPriceCents: input.item.unitPriceCents,
+      unitCostCents: input.item.unitCostCents,
+    }
+  )
+}
+
 function createConsumption(
   input: RecordConsumptionInput,
+  pricing: ConsumptionPricing,
   dependencies: DomainDependencies,
 ): ActiveConsumption {
   return {
@@ -97,8 +148,8 @@ function createConsumption(
     status: CONSUMPTION_STATUS.ACTIVE,
     chargeKind: input.chargeKind,
     quantity: input.quantity,
-    unitPriceCents: input.item.unitPriceCents,
-    unitCostCents: input.item.unitCostCents,
+    unitPriceCents: pricing.unitPriceCents,
+    unitCostCents: pricing.unitCostCents,
     createdAt: dependencies.now(),
     actorId: input.actorId,
   }
