@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-import { CURRENT_MONTH_LABEL, cardMatching, resetDemoDatabase } from './test-utils'
+import { CURRENT_MONTH, CURRENT_MONTH_LABEL, cardMatching, resetDemoDatabase } from './test-utils'
 
 /**
  * The gap the user found by using the app: the system worked beautifully on
@@ -51,6 +51,43 @@ test('registers a new integrante, launches consumption and charges them in the c
   // And it survives a reload, because it is in the database, not the page.
   await page.reload()
   await expect(cardMatching(page, ['Marcos Silva', 'Total:'])).toContainText('Total: R$ 7,00')
+})
+
+/**
+ * The same registration, without leaving the screen where the beer is being
+ * served. `/lancamentos` used to offer visitante only, so an integrante who
+ * joined tonight had to be typed into `/consumidores` first — mid-service,
+ * with someone waiting at the bar.
+ *
+ * What this proves beyond the unit tests is the kind of debt: the charge
+ * shows up in `/fechamento`, which only reads monthly consumption. A member
+ * registered here lands on a monthly tab, not on the night's event tab.
+ */
+test('registers an integrante mid-service from /lancamentos and charges their month', async ({
+  page,
+}) => {
+  await resetDemoDatabase(page)
+  await page.goto('/lancamentos')
+
+  await page.getByRole('button', { name: 'Novo consumidor' }).click()
+  const form = page.getByRole('form', { name: 'Cadastrar consumidor' })
+  await form.getByRole('radio', { name: 'Integrante' }).click()
+  await form.getByLabel('Nome').fill('Débora Nunes')
+  await form.getByRole('button', { name: 'Cadastrar' }).click()
+
+  // Selected automatically, like the walk-in path: straight to the items.
+  await expect(page.getByText('Lançando para')).toBeVisible()
+  await page.getByRole('button', { name: 'Lançar Espetinho' }).click()
+  await expect(page.getByRole('status')).toContainText('1× Espetinho para Débora Nunes')
+
+  // R$ 12,00 owed as an integrante — in the month's closing, not on an
+  // event tab.
+  await page.goto('/fechamento')
+  // The month is the screen's, not the card's — the picker names it once.
+  await expect(page.getByLabel('Mês do fechamento')).toHaveValue(CURRENT_MONTH)
+  const preview = cardMatching(page, ['Débora Nunes', 'Total:'])
+  await expect(preview).toContainText('1× Espetinho')
+  await expect(preview).toContainText('Total: R$ 12,00')
 })
 
 /**

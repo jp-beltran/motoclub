@@ -7,9 +7,11 @@ import { renderWithBar } from '../../../../test/render-with-bar'
 import type { BarDatabase, StorageLike } from '../../application/bar-repository'
 import {
   CHARGE_KIND,
+  CONSUMER_KIND,
   CONSUMPTION_STATUS,
   EVENT_STATUS,
   STOCK_MOVEMENT_KIND,
+  TAB_KIND,
   TAB_STATUS,
 } from '../../domain/constants'
 import { createDemoDatabase } from '../../infrastructure/demo-seed'
@@ -391,15 +393,55 @@ describe('LaunchScreen tab availability', () => {
   })
 })
 
-describe('LaunchScreen visitor registration', () => {
+describe('LaunchScreen consumer registration', () => {
+  it('registers an integrante and lands the first launch on their monthly tab', async () => {
+    const repository = createRepository(demoWithoutConsumption())
+    const { click, user } = setupCountingUser()
+    renderWithBar(<LancamentosPage />, { repository, route: '/lancamentos' })
+
+    await click(await screen.findByRole('button', { name: 'Novo consumidor' }))
+    await click(screen.getByRole('radio', { name: 'Integrante' }))
+    await user.type(screen.getByLabelText('Nome'), 'Marcos Vieira')
+    await click(screen.getByRole('button', { name: 'Cadastrar' }))
+
+    expect(await screen.findByText('Marcos Vieira')).toBeInTheDocument()
+
+    await click(await screen.findByRole('button', { name: 'Lançar Cerveja lata' }))
+
+    await waitFor(async () => {
+      expect(launchedConsumptions(await repository.getSnapshot())).toHaveLength(1)
+    })
+    const snapshot = await repository.getSnapshot()
+    const member = snapshot.consumers.find(({ name }) => name === 'Marcos Vieira')!
+    expect(member.kind).toBe(CONSUMER_KIND.MEMBER)
+
+    const consumption = launchedConsumptions(snapshot)[0]
+    expect(consumption.consumerId).toBe(member.id)
+    // The point of registering an integrante here rather than in
+    // /consumidores: the debt has to land on a monthly tab, not an event one.
+    expect(snapshot.tabs.find(({ id }) => id === consumption.tabId)?.kind).toBe(
+      TAB_KIND.MONTHLY,
+    )
+  })
+
+  it('offers visitante pre-selected, the walk-in this screen exists for', async () => {
+    const { click } = setupCountingUser()
+    renderWithBar(<LancamentosPage />, { repository: createRepository(), route: '/lancamentos' })
+
+    await click(await screen.findByRole('button', { name: 'Novo consumidor' }))
+
+    expect(screen.getByRole('radio', { name: 'Visitante' })).toBeChecked()
+    expect(screen.getByRole('radio', { name: 'Integrante' })).not.toBeChecked()
+  })
+
   it('selects the visitor it just created so the next tap registers consumption', async () => {
     const repository = createRepository()
     const { click, user } = setupCountingUser()
     renderWithBar(<LancamentosPage />, { repository, route: '/lancamentos' })
 
-    await click(await screen.findByRole('button', { name: 'Novo visitante' }))
+    await click(await screen.findByRole('button', { name: 'Novo consumidor' }))
     await user.type(screen.getByLabelText('Nome'), 'Carlos Lima')
-    await click(screen.getByRole('button', { name: 'Cadastrar visitante' }))
+    await click(screen.getByRole('button', { name: 'Cadastrar' }))
 
     expect(await screen.findByText('Carlos Lima')).toBeInTheDocument()
     expect(screen.getByText('Visitante')).toBeInTheDocument()

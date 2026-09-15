@@ -2,7 +2,7 @@ import { useState } from 'react'
 
 import { CONSUMER_KIND, type ConsumerKind } from '../../domain/constants'
 import type { Consumer } from '../../domain/entities'
-import { VisitorQuickForm } from '../consumers/VisitorQuickForm'
+import { ConsumerForm } from '../consumers/ConsumerForm'
 import { Button } from '../../../../shared/ui/Button'
 import { EmptyState } from '../../../../shared/ui/EmptyState'
 
@@ -24,7 +24,15 @@ export interface ConsumerStepProps {
   readonly onSelect: (consumer: Consumer) => void
 }
 
-/** Step 1: find who is consuming, or register a walk-in visitor on the spot. */
+/**
+ * Step 1: find who is consuming, or register someone on the spot.
+ *
+ * Registration is the same `ConsumerForm` `/consumidores` uses, only with
+ * `visitor` pre-selected — not a second, visitor-only shortcut. A walk-in is
+ * still the common case here, but an integrante who joined tonight has to be
+ * chargeable without leaving the screen mid-service, and two forms that both
+ * create a consumer would be two places for one rule to drift.
+ */
 export function ConsumerStep({ consumers, onSelect }: ConsumerStepProps) {
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<ConsumerFilter>('all')
@@ -48,15 +56,16 @@ export function ConsumerStep({ consumers, onSelect }: ConsumerStepProps) {
           aria-expanded={isRegistering}
           onClick={() => setIsRegistering((current) => !current)}
         >
-          Novo visitante
+          Novo consumidor
         </Button>
       </div>
 
       {isRegistering ? (
-        <VisitorQuickForm
-          onCreated={(visitor) => {
+        <ConsumerForm
+          defaultKind={CONSUMER_KIND.VISITOR}
+          onCreated={(consumer) => {
             setIsRegistering(false)
-            onSelect(visitor)
+            onSelect(consumer)
           }}
           onCancel={() => setIsRegistering(false)}
         />
@@ -88,7 +97,7 @@ export function ConsumerStep({ consumers, onSelect }: ConsumerStepProps) {
       {visible.length === 0 ? (
         <EmptyState
           title="Nenhum consumidor encontrado"
-          description="Ajuste a busca ou cadastre um novo visitante."
+          description="Ajuste a busca ou cadastre um novo consumidor."
         />
       ) : (
         <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">

@@ -20,6 +20,15 @@ export interface ConsumerFormProps {
   /** Receives the registered consumer, already persisted. */
   readonly onCreated: (consumer: Consumer) => void
   readonly onCancel?: () => void
+  /**
+   * Which kind is pre-selected. Defaults to `member`, which is what
+   * `/consumidores` wants (see the note below). `/lancamentos` passes
+   * `visitor`: the operator who opens the form mid-service is almost always
+   * registering a walk-in, and the one who is typing in the club's roster is
+   * on the other screen. The operator can still switch either way — this
+   * moves the default, never the capability.
+   */
+  readonly defaultKind?: ConsumerKind
 }
 
 /**
@@ -27,9 +36,10 @@ export interface ConsumerFormProps {
  *
  * The kind defaults to `member` because that is the one the system could
  * not create at all ("a opção é apenas de visitante"): the integrantes of a
- * motoclube are a roster someone sits down and types in, while a visitor is
- * usually registered mid-service by `VisitorQuickForm` on the launch
- * screen, which stays as it is.
+ * motoclube are a roster someone sits down and types in. `/lancamentos`
+ * overrides it to `visitor` through `defaultKind`, because mid-service the
+ * walk-in is the common case — this is the same form on both screens, so
+ * the rule and the pt-BR copy exist once.
  *
  * No rule of its own: an empty name and an unknown kind are refused by the
  * repository and printed here through `describeBarError`. A `required`
@@ -37,8 +47,12 @@ export interface ConsumerFormProps {
  * that already exists, and the browser's own bubble is not pt-BR copy this
  * screen controls.
  */
-export function ConsumerForm({ onCreated, onCancel }: ConsumerFormProps) {
-  const [kind, setKind] = useState<ConsumerKind>(CONSUMER_KIND.MEMBER)
+export function ConsumerForm({
+  onCreated,
+  onCancel,
+  defaultKind = CONSUMER_KIND.MEMBER,
+}: ConsumerFormProps) {
+  const [kind, setKind] = useState<ConsumerKind>(defaultKind)
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
   const createConsumer = useCreateConsumer()

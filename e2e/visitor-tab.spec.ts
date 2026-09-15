@@ -14,10 +14,13 @@ test('registers a visitor, launches consumption, closes the tab and keeps its su
   await resetDemoDatabase(page)
   await page.goto('/lancamentos')
 
-  await page.getByRole('button', { name: 'Novo visitante' }).click()
-  const form = page.getByRole('form', { name: 'Novo visitante' })
+  await page.getByRole('button', { name: 'Novo consumidor' }).click()
+  const form = page.getByRole('form', { name: 'Cadastrar consumidor' })
+  // Visitante is the pre-selected kind on this screen, so a walk-in is still
+  // name-and-go: nothing to pick before typing.
+  await expect(form.getByRole('radio', { name: 'Visitante' })).toBeChecked()
   await form.getByLabel('Nome').fill('Marcos Silva')
-  await form.getByRole('button', { name: 'Cadastrar visitante' }).click()
+  await form.getByRole('button', { name: 'Cadastrar' }).click()
 
   // The freshly created visitor is selected automatically, so the launch
   // screen jumps straight to the item step for them.

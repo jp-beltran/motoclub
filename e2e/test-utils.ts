@@ -13,6 +13,8 @@ import { formatMonth, formatMonthName, getCurrentMonth } from '../src/shared/dat
  * them used to fail on the 1st of the next month with no code change.
  */
 export const CURRENT_MONTH_LABEL = formatMonth(getCurrentMonth())
+/** The raw `AAAA-MM` key, for asserting a control's value rather than its copy. */
+export const CURRENT_MONTH = getCurrentMonth()
 export const ACTIVE_EVENT_NAME = `Encontro de ${formatMonthName(getCurrentMonth())}`
 
 /**
