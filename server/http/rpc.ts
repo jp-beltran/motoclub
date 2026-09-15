@@ -1,5 +1,16 @@
 import type { BarRepository } from '../../src/features/bar/application/bar-repository'
 import { BarError, type BarErrorCode } from '../../src/features/bar/domain/errors'
+import { CURRENT_ACTOR_ID } from '../../src/features/bar/application/actor'
+
+/**
+ * Quem o servidor grava como autor de toda escrita.
+ *
+ * É a mesma constante que a interface usa para *exibir* o nome do operador
+ * (`src/features/bar/application/actor.ts`), importada e não copiada, para
+ * que o gravado e o lido na tela não possam divergir. Escrever passou a ser
+ * trabalho daqui: ver `stampActor`.
+ */
+export const RPC_ACTOR_ID = CURRENT_ACTOR_ID
 
 /**
  * The literal, frozen allowlist of every method `POST /api/rpc` may call.
@@ -36,6 +47,7 @@ export const RPC_METHOD_NAMES = [
   'listMonthlyClosings',
   'listMemberStatements',
   'resetDemo',
+  'clearDatabase',
   'createVisitor',
   'ensureEventTab',
   'ensureMonthlyTab',
@@ -118,6 +130,7 @@ const RPC_ARG_SHAPES: Readonly<Record<RpcMethodName, RpcArgShape>> = {
   listMonthlyClosings: 'none',
   listMemberStatements: 'none',
   resetDemo: 'none',
+  clearDatabase: 'none',
   createVisitor: 'object',
   ensureEventTab: 'object',
   ensureMonthlyTab: 'object',
@@ -204,6 +217,69 @@ function validateRpcArgs(method: RpcMethodName, args: readonly unknown[]): void 
  * `TypeError`, and any other `Error` this call throws is left alone,
  * still falling through to `statusForRpcError`'s 500 default.
  */
+/**
+ * Quais métodos gravam um `actorId`, exaustivo sobre a porta como
+ * `RPC_ARG_SHAPES` e `BAR_ERROR_STATUS`: um método novo não compila até ser
+ * classificado, então nenhuma escrita futura passa a aceitar o ator do
+ * cliente por esquecimento.
+ *
+ * `reassignConsumption` é `false` porque não tem `actorId` nenhum — a
+ * única correção sem autor registrado, lacuna conhecida e anterior a isto.
+ */
+const RPC_ACTOR_METHODS: Readonly<Record<RpcMethodName, boolean>> = {
+  getSnapshot: false,
+  listConsumers: false,
+  listItems: false,
+  listEvents: false,
+  listTabs: false,
+  listConsumptions: false,
+  listPayments: false,
+  listStockMovements: false,
+  listMonthlyClosings: false,
+  listMemberStatements: false,
+  resetDemo: false,
+  clearDatabase: false,
+  createVisitor: false,
+  ensureEventTab: false,
+  ensureMonthlyTab: false,
+  selectOrCreateActiveEvent: false,
+  createConsumption: true,
+  cancelConsumption: true,
+  editConsumptionQuantity: true,
+  reassignConsumption: false,
+  closeVisitorTab: false,
+  reopenVisitorTab: false,
+  recordPayment: true,
+  createMonthlyClosing: true,
+  addStockMovement: true,
+  createConsumer: false,
+  updateConsumer: false,
+  setConsumerActive: false,
+  createItem: false,
+  updateItem: false,
+  setItemActive: false,
+}
+
+/**
+ * Substitui o `actorId` do payload pelo do servidor.
+ *
+ * Antes disto o campo vinha do cliente: `CURRENT_ACTOR_ID` é uma constante
+ * do front, repassada tal e qual em toda escrita, então qualquer chamador
+ * do RPC declarava o autor que quisesse e o registro de "quem fez isso" não
+ * era prova de nada. Com um PIN compartilhado e um operador, nada disso era
+ * explorável — mas o histórico precisa valer no dia em que houver o
+ * segundo, e essa é a única costura onde a identidade existe.
+ *
+ * Copia em vez de mutar: `args` é o objeto que veio do JSON do chamador, e
+ * escrever nele faria esta função ter efeito colateral sobre a requisição
+ * que ainda está sendo tratada.
+ */
+function stampActor(method: RpcMethodName, args: readonly unknown[]): unknown[] {
+  if (!RPC_ACTOR_METHODS[method]) return args as unknown[]
+  const [input, ...rest] = args
+  return [{ ...(input as Record<string, unknown>), actorId: RPC_ACTOR_ID }, ...rest]
+}
+
 export async function invokeRpcMethod(
   repository: BarRepository,
   method: string,
@@ -215,7 +291,7 @@ export async function invokeRpcMethod(
   validateRpcArgs(method, args)
   const fn = repository[method] as (...callArgs: unknown[]) => Promise<unknown>
   try {
-    return await fn.apply(repository, args as unknown[])
+    return await fn.apply(repository, stampActor(method, args))
   } catch (error) {
     if (error instanceof TypeError) {
       throw new RpcRequestError(

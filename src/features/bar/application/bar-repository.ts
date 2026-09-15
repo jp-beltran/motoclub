@@ -184,6 +184,17 @@ export interface BarRepository {
   listMonthlyClosings(): Promise<MonthlyClosing[]>
   listMemberStatements(): Promise<MemberStatement[]>
   resetDemo(): Promise<BarDatabase>
+  /**
+   * Esvazia o bar: nenhum consumidor, nenhum item, nenhum consumo, nenhum
+   * pagamento. É o oposto de `resetDemo`, e o único caminho para pôr o
+   * sistema em serviço com dados reais.
+   *
+   * Não tem controle na interface de propósito: limpar o bar é ato de
+   * instalação, feito uma vez por quem monta a máquina, e um botão que
+   * apaga tudo na tela de quem serve cerveja é um acidente esperando
+   * acontecer. Chega pelo RPC — ver a allowlist em `server/http/rpc.ts`.
+   */
+  clearDatabase(): Promise<BarDatabase>
   createVisitor(input: CreateVisitorInput): Promise<Consumer>
   ensureEventTab(input: EnsureEventTabInput): Promise<EventTab>
   ensureMonthlyTab(input: EnsureMonthlyTabInput): Promise<MonthlyTab>

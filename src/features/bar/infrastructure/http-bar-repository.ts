@@ -188,6 +188,10 @@ export class HttpBarRepository implements BarRepository {
     return this.call('resetDemo')
   }
 
+  async clearDatabase(): Promise<BarDatabase> {
+    return this.call('clearDatabase')
+  }
+
   async createVisitor(input: CreateVisitorInput): Promise<Consumer> {
     return this.call('createVisitor', [input])
   }

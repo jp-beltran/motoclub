@@ -5,6 +5,7 @@ import {
   buildSessionCookieHeader,
   createLoginThrottle,
   createSessionToken,
+  deriveSessionKey,
   guardLoginAttempt,
   hashPin,
   LOGIN_DELAY_STEP_MS,
@@ -211,5 +212,47 @@ describe('login throttle', () => {
     recordLoginSuccess(throttle)
     await guardLoginAttempt(throttle, sleep)
     expect(sleep).toHaveBeenCalledTimes(1)
+  })
+})
+
+/**
+ * O token é `HMAC(segredo, expiresAt)` e o PIN não entra nele — então
+ * trocar o PIN não deslogava ninguém: um cookie válido continuava entrando
+ * por até 12 horas com o PIN já trocado, e só rodar o
+ * `BAR_SESSION_SECRET` invalidava sessão. Quem troca o PIN quer justamente
+ * o contrário.
+ *
+ * A chave de assinatura passa a ser derivada do segredo *e* do hash do PIN,
+ * de modo que trocar qualquer um dos dois invalida todo token já emitido.
+ */
+describe('deriveSessionKey', () => {
+  const secret = 'server-secret'
+  const pinHashA = 'scrypt$aa$bb'
+  const pinHashB = 'scrypt$cc$dd'
+
+  it('invalidates every existing token when the PIN changes', () => {
+    const token = createSessionToken(deriveSessionKey(secret, pinHashA), 1_000_000)
+
+    expect(verifySessionToken(token, deriveSessionKey(secret, pinHashA), 1_000_001)).toBe(true)
+    expect(verifySessionToken(token, deriveSessionKey(secret, pinHashB), 1_000_001)).toBe(false)
+  })
+
+  it('still invalidates every token when the session secret is rotated', () => {
+    const token = createSessionToken(deriveSessionKey(secret, pinHashA), 1_000_000)
+
+    expect(verifySessionToken(token, deriveSessionKey('outro-segredo', pinHashA), 1_000_001)).toBe(
+      false,
+    )
+  })
+
+  it('is stable for the same pair, so a restart does not log the operator out', () => {
+    expect(deriveSessionKey(secret, pinHashA)).toBe(deriveSessionKey(secret, pinHashA))
+  })
+
+  it('never returns the raw secret or the raw PIN hash', () => {
+    const key = deriveSessionKey(secret, pinHashA)
+
+    expect(key).not.toContain(secret)
+    expect(key).not.toContain(pinHashA)
   })
 })

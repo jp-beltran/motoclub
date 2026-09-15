@@ -202,10 +202,35 @@ describe('auth gate', () => {
     expect(instance.sleep).not.toHaveBeenCalled()
   })
 
-  it('GET /logout clears the cookie', async () => {
+  /**
+   * Era `GET /logout`, e um GET que muda estado é alcançável por um
+   * `<img src=...>` em qualquer página que o operador abra na mesma
+   * máquina — bastava isso para derrubar a sessão dele. POST fecha essa
+   * porta, porque o cookie é `SameSite=Strict` e um formulário de outro
+   * site não consegue mandar JSON.
+   */
+  it('no longer lets a bare GET drop the session', async () => {
     instance = await startTestServer()
     const loginResult = await login(instance.baseUrl, PIN)
+
     const response = await fetch(`${instance.baseUrl}/logout`, {
+      headers: { Cookie: loginResult.cookie! },
+      redirect: 'manual',
+    })
+
+    expect(response.headers.get('set-cookie')).toBeNull()
+    // E a sessão continua valendo.
+    const after = await fetch(`${instance.baseUrl}/api/snapshot`, {
+      headers: { Cookie: loginResult.cookie! },
+    })
+    expect(after.status).toBe(200)
+  })
+
+  it('POST /api/logout clears the cookie', async () => {
+    instance = await startTestServer()
+    const loginResult = await login(instance.baseUrl, PIN)
+    const response = await fetch(`${instance.baseUrl}/api/logout`, {
+      method: 'POST',
       headers: { Cookie: loginResult.cookie! },
       redirect: 'manual',
     })

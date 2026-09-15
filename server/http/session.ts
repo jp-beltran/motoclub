@@ -74,6 +74,25 @@ export const SESSION_TTL_MS = 12 * 60 * 60 * 1000
 export const SESSION_COOKIE_NAME = 'motoclub_session'
 
 /**
+ * A chave com que os tokens são assinados: o segredo do servidor **e** o
+ * hash do PIN, juntos.
+ *
+ * Sem isto, o token era `HMAC(segredo, expiresAt)` e o PIN não entrava nele
+ * em lugar nenhum — de modo que trocar o PIN não deslogava ninguém. Um
+ * cookie já emitido continuava valendo as 12 horas inteiras com o PIN novo
+ * no ar, e a única forma de cortar sessão era rodar o `BAR_SESSION_SECRET`,
+ * que não é o que quem troca o PIN pensa estar fazendo.
+ *
+ * Derivada por HMAC e não por concatenação, para que a chave não carregue
+ * nem o segredo nem o hash do PIN em claro. `expiresAt` continua sendo a
+ * única mensagem assinada, então a verificação segue sem estado: nenhuma
+ * tabela de sessão, e um reinício às 4 da manhã não derruba o operador.
+ */
+export function deriveSessionKey(secret: string, pinHash: string): string {
+  return createHmac('sha256', secret).update(pinHash).digest('base64url')
+}
+
+/**
  * `base64url(expiresAt).base64url(HMAC-SHA256(secret, expiresAt))`.
  * `expiresAt` is an epoch-millisecond integer, carried as the HMAC message
  * so verification never needs anything but the token and the shared

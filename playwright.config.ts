@@ -1,36 +1,13 @@
 import { defineConfig, devices } from '@playwright/test'
-import { randomBytes, scryptSync } from 'node:crypto'
+import { randomBytes } from 'node:crypto'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+import { hashPin } from './server/http/session'
 import { E2E_PIN } from './e2e/test-utils'
 
 const PORT = 4173
-
-/**
- * `scrypt$<salt-hex>$<hash-hex>`, matching `server/http/session.ts`'s
- * `hashPin` exactly (16-byte salt, 64-byte derived key) — reimplemented
- * here rather than imported so this config's own TypeScript project
- * (`tsconfig.node.json`, no server-side `lib`) never has to resolve
- * `server/`'s module graph just to boot the test server. The format
- * itself is fixed by the shared backend contract
- * (`.superpowers/sdd/prototipo-bar-ui/backend-contract.md`).
- *
- * SHARED CONTRACT, DUPLICATED ON PURPOSE: this is the same algorithm as
- * `server/http/session.ts`'s `hashPin`, by hand, not by import — see the
- * paragraph above for why. Nothing but this comment (and the matching one
- * on `hashPin` itself) keeps the two from drifting apart: if you change
- * either the salt length, the key length, or the `scrypt$<salt>$<hash>`
- * layout in one place, update it in the other, or `verifyPin` on the
- * server will silently reject every PIN this file hashes for the e2e
- * server it boots.
- */
-function hashPinForE2e(pin: string): string {
-  const salt = randomBytes(16)
-  const hash = scryptSync(pin, salt, 64)
-  return `scrypt$${salt.toString('hex')}$${hash.toString('hex')}`
-}
 
 /**
  * A private temp SQLite file per `npx playwright test` invocation. See the
@@ -74,7 +51,7 @@ export default defineConfig({
     timeout: 180_000,
     env: {
       BAR_DB_PATH: join(dbDir, 'bar.sqlite3'),
-      BAR_PIN_HASH: hashPinForE2e(E2E_PIN),
+      BAR_PIN_HASH: hashPin(E2E_PIN),
       BAR_SESSION_SECRET: randomBytes(32).toString('hex'),
       BAR_PORT: String(PORT),
       BAR_HOST: '127.0.0.1',

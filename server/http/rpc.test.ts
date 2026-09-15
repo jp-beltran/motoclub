@@ -5,14 +5,15 @@ import {
   BAR_ERROR_STATUS,
   invokeRpcMethod,
   isRpcMethod,
+  RPC_ACTOR_ID,
   RPC_METHOD_NAMES,
   RpcRequestError,
   statusForRpcError,
 } from './rpc'
 
 describe('RPC_METHOD_NAMES', () => {
-  it('lists exactly the 27 methods of the BarRepository port', () => {
-    expect(RPC_METHOD_NAMES).toHaveLength(30)
+  it('lists exactly the methods of the BarRepository port', () => {
+    expect(RPC_METHOD_NAMES).toHaveLength(31)
   })
 
   it('has no duplicate names', () => {
@@ -262,5 +263,78 @@ describe('statusForRpcError', () => {
   it('maps any other thrown value to a 500 internal-error', () => {
     expect(statusForRpcError(new Error('boom'))).toEqual({ status: 500, code: 'internal-error' })
     expect(statusForRpcError('boom')).toEqual({ status: 500, code: 'internal-error' })
+  })
+})
+
+/**
+ * `actorId` costumava vir do payload do RPC: `CURRENT_ACTOR_ID` é uma
+ * constante do front, e toda escrita a repassava tal e qual. Ou seja,
+ * qualquer chamador declarava o ator que quisesse, e o campo "quem fez
+ * isso" gravado em cada consumo, pagamento e fechamento não era prova de
+ * nada. Hoje há um PIN só e uma pessoa só, então nada era explorável — mas
+ * o registro tem de valer no dia em que houver a segunda.
+ *
+ * O servidor passa a carimbar. O dado que chega pelo fio é ignorado.
+ */
+describe('invokeRpcMethod actor stamping', () => {
+  function recordingRepository() {
+    const calls: { method: string; args: unknown[] }[] = []
+    const repository = new Proxy(
+      {},
+      {
+        get(_target, property: string) {
+          return async (...args: unknown[]) => {
+            calls.push({ method: property, args })
+            return { ok: true }
+          }
+        },
+      },
+    ) as never
+    return { repository, calls }
+  }
+
+  it('overwrites an actorId the caller tried to claim', async () => {
+    const { repository, calls } = recordingRepository()
+
+    await invokeRpcMethod(repository, 'recordPayment', [
+      { target: 'tab', targetId: 'tab-1', amountCents: 500, actorId: 'presidente-do-clube' },
+    ])
+
+    expect((calls[0].args[0] as { actorId: string }).actorId).toBe(RPC_ACTOR_ID)
+  })
+
+  it('stamps an actorId the caller omitted entirely', async () => {
+    const { repository, calls } = recordingRepository()
+
+    await invokeRpcMethod(repository, 'createConsumption', [
+      { tabId: 'tab-1', itemId: 'item-1', quantity: 1, chargeKind: 'charged' },
+    ])
+
+    expect((calls[0].args[0] as { actorId: string }).actorId).toBe(RPC_ACTOR_ID)
+  })
+
+  it('leaves the caller argument itself untouched, stamping a copy', async () => {
+    const { repository } = recordingRepository()
+    const sent = { target: 'tab', targetId: 'tab-1', amountCents: 500, actorId: 'mentira' }
+
+    await invokeRpcMethod(repository, 'recordPayment', [sent])
+
+    expect(sent.actorId).toBe('mentira')
+  })
+
+  it('adds no actorId to a method that takes none', async () => {
+    const { repository, calls } = recordingRepository()
+
+    await invokeRpcMethod(repository, 'updateItem', [{ id: 'item-1', unitPriceCents: 900 }])
+
+    expect(calls[0].args[0]).not.toHaveProperty('actorId')
+  })
+
+  it('leaves a no-argument method alone', async () => {
+    const { repository, calls } = recordingRepository()
+
+    await invokeRpcMethod(repository, 'getSnapshot', [])
+
+    expect(calls[0].args).toEqual([])
   })
 })

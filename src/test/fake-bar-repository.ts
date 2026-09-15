@@ -1,7 +1,7 @@
 import { vi } from 'vitest'
 
 import type { BarDatabase, BarRepository } from '../features/bar/application/bar-repository'
-import { createDemoDatabase } from '../features/bar/infrastructure/demo-seed'
+import { createDemoDatabase, createEmptyDatabase } from '../features/bar/infrastructure/demo-seed'
 
 function notImplemented(method: string): never {
   throw new Error(`FakeBarRepository.${method} is not implemented`)
@@ -31,6 +31,10 @@ export function createFakeBarRepository(
     listMemberStatements: vi.fn(async () => structuredClone(database.memberStatements)),
     resetDemo: vi.fn(async () => {
       database = createDemoDatabase()
+      return structuredClone(database)
+    }),
+    clearDatabase: vi.fn(async () => {
+      database = createEmptyDatabase()
       return structuredClone(database)
     }),
     createVisitor: vi.fn(async () => notImplemented('createVisitor')),

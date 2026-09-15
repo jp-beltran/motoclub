@@ -6,6 +6,7 @@ import {
   buildSessionCookieHeader,
   createLoginThrottle,
   createSessionToken,
+  deriveSessionKey,
   guardLoginAttempt,
   type LoginThrottle,
   readSessionToken,
@@ -90,8 +91,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function isAuthenticated(req: IncomingMessage, sessionSecret: string): boolean {
-  return verifySessionToken(readSessionToken(req.headers.cookie), sessionSecret)
+/**
+ * A chave é derivada do segredo **e** do hash do PIN (ver
+ * `deriveSessionKey`), então trocar o PIN invalida todo cookie já emitido —
+ * que é o que quem troca o PIN espera que aconteça.
+ */
+function isAuthenticated(req: IncomingMessage, config: RouterConfig): boolean {
+  return verifySessionToken(
+    readSessionToken(req.headers.cookie),
+    deriveSessionKey(config.sessionSecret, config.pinHash),
+  )
 }
 
 /**
@@ -125,7 +134,7 @@ async function handleLogin(
   }
 
   recordLoginSuccess(throttle)
-  const token = createSessionToken(config.sessionSecret)
+  const token = createSessionToken(deriveSessionKey(config.sessionSecret, config.pinHash))
   res.setHeader('Set-Cookie', buildSessionCookieHeader(token, Math.floor(SESSION_TTL_MS / 1000)))
   sendJson(res, 200, { ok: true })
 }
@@ -208,9 +217,21 @@ export function createRequestHandler(deps: RouterDependencies): RequestHandler {
       return
     }
 
-    if (method === 'GET' && pathname === '/logout') {
-      res.writeHead(302, { 'Set-Cookie': buildLogoutCookieHeader(), Location: '/' })
-      res.end()
+    /**
+     * POST, e não GET. Um GET que muda estado é alcançável por um
+     * `<img src="http://127.0.0.1:8787/logout">` em qualquer página que o
+     * operador abra nesta máquina — o bastante para derrubar a sessão dele
+     * no meio do serviço. Como POST, o cookie `SameSite=Strict` não é
+     * enviado de outro site e um formulário cross-site não consegue forjar
+     * a requisição.
+     *
+     * Devolve 200 e não 302: quem chama é o botão "Sair" da barra superior
+     * (`src/app/layout/TopBar.tsx`), via `fetch`, que recarrega a página
+     * depois — e aí o servidor já serve a tela de login para a mesma URL.
+     */
+    if (method === 'POST' && pathname === '/api/logout') {
+      res.setHeader('Set-Cookie', buildLogoutCookieHeader())
+      sendJson(res, 200, { ok: true })
       return
     }
 
@@ -221,7 +242,7 @@ export function createRequestHandler(deps: RouterDependencies): RequestHandler {
     }
 
     if (method === 'POST' && pathname === '/api/rpc') {
-      if (!isAuthenticated(req, config.sessionSecret)) {
+      if (!isAuthenticated(req, config)) {
         sendUnauthorized(res)
         return
       }
@@ -230,7 +251,7 @@ export function createRequestHandler(deps: RouterDependencies): RequestHandler {
     }
 
     if (method === 'GET' && pathname === '/api/snapshot') {
-      if (!isAuthenticated(req, config.sessionSecret)) {
+      if (!isAuthenticated(req, config)) {
         sendUnauthorized(res)
         return
       }
@@ -250,7 +271,7 @@ export function createRequestHandler(deps: RouterDependencies): RequestHandler {
         if (!served) sendPlainNotFound(res)
         return
       }
-      await serveAppShell(res, config.staticDir, isAuthenticated(req, config.sessionSecret))
+      await serveAppShell(res, config.staticDir, isAuthenticated(req, config))
       return
     }
 

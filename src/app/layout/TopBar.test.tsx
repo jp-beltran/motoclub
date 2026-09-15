@@ -118,3 +118,45 @@ describe('TopBar demo reset gate', () => {
     vi.unstubAllEnvs()
   })
 })
+
+/**
+ * O logout existia no servidor desde sempre e não tinha como ser alcançado:
+ * nenhuma tela linkava para ele, então a única forma era digitar a URL. Com
+ * a rota virando POST, digitar deixou de funcionar — este botão é o que
+ * torna o recurso real em vez de órfão.
+ */
+describe('TopBar logout', () => {
+  it('posts to the logout endpoint and reloads so the server serves the login screen', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }))
+    const reload = vi.fn()
+    vi.spyOn(window, 'location', 'get').mockReturnValue({
+      ...window.location,
+      reload,
+    } as unknown as Location)
+    renderWithBar(<TopBar />)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Sair' }))
+
+    await waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledWith('/api/logout', expect.objectContaining({ method: 'POST' }))
+    })
+    await waitFor(() => {
+      expect(reload).toHaveBeenCalled()
+    })
+    fetchSpy.mockRestore()
+  })
+
+  it('reports a failed logout in pt-BR instead of pretending it worked', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('offline'))
+    renderWithBar(<TopBar />)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Sair' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Não foi possível sair. Tente novamente.',
+    )
+    fetchSpy.mockRestore()
+  })
+})

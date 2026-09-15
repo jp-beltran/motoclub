@@ -131,6 +131,48 @@ describe('LocalBarRepository persistence', () => {
     expect(storage.writes).toBe(1)
   })
 
+  /**
+   * `resetDemo` repõe a demonstração; este é o outro caminho, o que põe o
+   * bar em serviço de verdade. Antes dele não existia nenhum: apagar a
+   * linha do banco (ou o arquivo) só fazia `load()` regravar a semente, e
+   * a primeira noite real do clube começava com Ana Paula e cinco itens
+   * inventados no meio dos dados verdadeiros.
+   */
+  it('clearDatabase empties every collection and persists the empty database', async () => {
+    const { repository, storage } = createRepository()
+    expect((await repository.getSnapshot()).consumers.length).toBeGreaterThan(0)
+    const writesBefore = storage.writes
+
+    const cleared = await repository.clearDatabase()
+
+    for (const [name, rows] of Object.entries(cleared)) {
+      expect(rows, `${name} deveria estar vazia`).toEqual([])
+    }
+    expect(storage.writes).toBe(writesBefore + 1)
+  })
+
+  /**
+   * O ponto que distingue isto de apagar o arquivo: um banco vazio é um
+   * banco *gravado*, então `load()` encontra bytes e não repõe a semente.
+   */
+  it('keeps the bar empty across reads instead of re-seeding the demo', async () => {
+    const { repository } = createRepository()
+    await repository.clearDatabase()
+
+    expect((await repository.getSnapshot()).consumers).toEqual([])
+    expect((await repository.listItems())).toEqual([])
+  })
+
+  it('accepts real registrations into a cleared database', async () => {
+    const { repository } = createRepository()
+    await repository.clearDatabase()
+
+    const member = await repository.createConsumer({ name: 'João Pedro', kind: CONSUMER_KIND.MEMBER })
+
+    expect(member.kind).toBe(CONSUMER_KIND.MEMBER)
+    expect((await repository.listConsumers())).toHaveLength(1)
+  })
+
   it('rejects invalid nested entity shapes without overwriting bytes', async () => {
     const { repository, storage } = createRepository()
     const invalid = createDemoDatabase()

@@ -1,4 +1,5 @@
-import { HelpCircle } from 'lucide-react'
+import { HelpCircle, LogOut } from 'lucide-react'
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import { CURRENT_ACTOR_NAME } from '../../features/bar/application/actor'
@@ -10,8 +11,31 @@ interface TopBarProps {
   readonly activeEventName?: string
 }
 
+const LOGOUT_FAILED_MESSAGE = 'Não foi possível sair. Tente novamente.'
+
 export function TopBar({ activeEventName }: TopBarProps) {
   const tutorial = useTutorial()
+  const [logoutError, setLogoutError] = useState<string>()
+
+  /**
+   * O portão é uma ramificação do servidor, não um destino do roteador:
+   * depois que o cookie cai, recarregar a mesma URL já devolve a tela de
+   * login. Por isso `reload()` e não `navigate('/login')` — rota de login
+   * não existe no cliente.
+   */
+  async function handleLogout() {
+    setLogoutError(undefined)
+    try {
+      const response = await fetch('/api/logout', { method: 'POST' })
+      if (!response.ok) {
+        setLogoutError(LOGOUT_FAILED_MESSAGE)
+        return
+      }
+      window.location.reload()
+    } catch {
+      setLogoutError(LOGOUT_FAILED_MESSAGE)
+    }
+  }
 
   return (
     <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border-subtle bg-surface-raised px-4 py-3 md:px-6">
@@ -44,6 +68,15 @@ export function TopBar({ activeEventName }: TopBarProps) {
             merely hidden — see DevResetDemoButton for why, and for the grep
             that proves it. */}
         {import.meta.env.DEV ? <DevResetDemoButton /> : null}
+        <Button variant="ghost" onClick={handleLogout}>
+          <LogOut aria-hidden="true" className="h-4 w-4" />
+          Sair
+        </Button>
+        {logoutError ? (
+          <p role="alert" className="text-sm text-accent">
+            {logoutError}
+          </p>
+        ) : null}
       </div>
     </header>
   )

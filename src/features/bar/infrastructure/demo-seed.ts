@@ -117,3 +117,28 @@ function createSeedClock(now: Date): (daysBeforeToday: number, hour: number, min
     return (moment > now ? now : moment).toISOString()
   }
 }
+
+/**
+ * Um bar sem nada dentro: nenhum consumidor, nenhum item, nenhum consumo.
+ *
+ * O contraponto de `createDemoDatabase`, e o único caminho para pôr o
+ * sistema em serviço de verdade. Antes disto não existia nenhum: apagar a
+ * linha `kv`, ou o arquivo SQLite inteiro, fazia `load()` ver `null` e
+ * regravar a demonstração — de modo que a primeira noite real do clube
+ * começaria com Ana Paula, Bruno e seis itens inventados misturados aos
+ * dados verdadeiros. Vazio tem de ser um estado que se *grava*, não a
+ * ausência de bytes.
+ */
+export function createEmptyDatabase(): BarDatabase {
+  return {
+    consumers: [],
+    items: [],
+    events: [],
+    tabs: [],
+    consumptions: [],
+    payments: [],
+    stockMovements: [],
+    monthlyClosings: [],
+    memberStatements: [],
+  }
+}
