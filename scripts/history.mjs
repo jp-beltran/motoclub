@@ -36,7 +36,7 @@
 //   node scripts/history.mjs diff <seq> [--db <caminho>]
 //   node scripts/history.mjs restore <seq> [--db <caminho>] [--yes]
 
-import { DatabaseSync } from 'node:sqlite';
+import { carregarSqlite } from './lib/node-sqlite.mjs';
 import { existsSync, readFileSync } from 'node:fs';
 import { createInterface } from 'node:readline/promises';
 import path from 'node:path';
@@ -44,6 +44,10 @@ import os from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { gunzipSync } from 'node:zlib';
 import { diffBarDatabases } from './lib/bar-history-diff.mjs';
+
+// Carregado assim, e não por `import`, para o script poder se reexecutar
+// no Node de /opt/node quando o do PATH não tiver node:sqlite.
+const { DatabaseSync } = await carregarSqlite();
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 // Override exists mainly so tests can point this at a path that

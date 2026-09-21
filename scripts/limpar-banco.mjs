@@ -19,11 +19,15 @@
 //
 // Antes de escrever, ele SEMPRE guarda uma cópia do banco atual ao lado,
 // com a data no nome. Limpar é irreversível para quem não tem a cópia.
-import { DatabaseSync } from 'node:sqlite'
+import { carregarSqlite } from './lib/node-sqlite.mjs'
 import { createInterface } from 'node:readline/promises'
 import { existsSync, copyFileSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import path from 'node:path'
+
+// Carregado assim, e não por `import`, para o script poder se reexecutar
+// no Node de /opt/node quando o do PATH não tiver node:sqlite.
+const { DatabaseSync } = await carregarSqlite()
 
 const CHAVE = 'motoclub:bar-database'
 
