@@ -1309,6 +1309,22 @@ function normalizeOptionalText(item) {
   };
 }
 
+// src/features/bar/infrastructure/empty-database.ts
+function createEmptyDatabase() {
+  const vazio = {
+    consumers: [],
+    items: [],
+    events: [],
+    tabs: [],
+    consumptions: [],
+    payments: [],
+    stockMovements: [],
+    monthlyClosings: [],
+    memberStatements: []
+  };
+  return vazio;
+}
+
 // server/config.ts
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -2183,11 +2199,20 @@ async function openDatabase(config) {
   return driver;
 }
 function buildRepository(driver) {
+  const storage = new SqliteStorage(driver);
+  seedEmptyIfAbsent(storage);
   return new LocalBarRepository({
-    storage: new SqliteStorage(driver),
+    storage,
     nextId: () => randomUUID(),
     now: () => (/* @__PURE__ */ new Date()).toISOString()
   });
+}
+function seedEmptyIfAbsent(storage) {
+  if (storage.getItem(DEFAULT_STORAGE_KEY) !== null) return;
+  storage.setItem(
+    DEFAULT_STORAGE_KEY,
+    JSON.stringify({ version: 1, data: createEmptyDatabase() })
+  );
 }
 function sendJson2(res, status, body) {
   res.writeHead(status, { "Content-Type": "application/json; charset=utf-8" });
