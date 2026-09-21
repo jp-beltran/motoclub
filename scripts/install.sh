@@ -756,6 +756,72 @@ ensure_power_settings() {
 
 # --- main ------------------------------------------------------------------------
 
+# --- Fase 8: 'git pull' passa a aplicar a atualização sozinho ----------------
+
+# O fluxo prometido ao operador é "git pull e pronto". Sem isto, o pull troca
+# os arquivos e o serviço continua rodando o bundle velho — e o sintoma é o
+# pior possível: a correção "não funcionou", quando na verdade nunca entrou.
+# Um hook post-merge fecha essa lacuna no único lugar que o operador toca.
+#
+# Mora em .git/hooks, que não é versionado, então é o instalador que o
+# escreve — e reescreve a cada execução, para uma versão nova do hook chegar
+# junto com o resto.
+ensure_git_pull_hook() {
+  step "Atualização automática depois do 'git pull'"
+
+  if [ ! -d "$HOME_DIR/.git" ]; then
+    warn "$HOME_DIR não é um checkout git — sem hook de atualização."
+    warn "Isso também significa que 'git pull' não existe aqui; veja o diagnóstico."
+    return 0
+  fi
+
+  local hook="$HOME_DIR/.git/hooks/post-merge"
+
+  if [ "$DRY_RUN" -eq 1 ]; then
+    info "[dry-run] escreveria $hook para reiniciar o serviço depois de cada 'git pull'"
+    return 0
+  fi
+
+  mkdir -p "$HOME_DIR/.git/hooks"
+  cat > "$hook" <<'HOOK'
+#!/usr/bin/env bash
+# Escrito por scripts/install.sh. Roda depois de todo 'git pull' que traz
+# algo novo, para o serviço passar a rodar o que acabou de chegar.
+#
+# Silencioso quando não há o que fazer: um pull sem novidade não reinicia
+# nada, e o hook nunca derruba o pull (o 'exit 0' no fim é deliberado — um
+# hook que falha não pode transformar uma atualização bem-sucedida em erro).
+set -u
+
+if ! command -v systemctl >/dev/null 2>&1; then
+  exit 0
+fi
+
+if ! systemctl --user list-unit-files motoclub.service >/dev/null 2>&1; then
+  exit 0
+fi
+
+echo "-> atualizando o serviço do Motoclub com o que acabou de chegar..."
+if systemctl --user restart motoclub.service; then
+  echo "   serviço reiniciado."
+  if [ -f "$(git rev-parse --show-toplevel)/producao-info.json" ]; then
+    commit="$(sed -nE 's/.*"sourceCommit": "(.........).*/\1/p' \
+      "$(git rev-parse --show-toplevel)/producao-info.json" | head -1)"
+    [ -n "${commit:-}" ] && echo "   agora rodando o build $commit"
+  fi
+  echo "   confira com: $(git rev-parse --show-toplevel)/scripts/doctor.sh"
+else
+  echo "   ATENCAO: o serviço não reiniciou. Rode:" >&2
+  echo "     systemctl --user restart motoclub" >&2
+  echo "     journalctl --user -u motoclub -n 30" >&2
+fi
+
+exit 0
+HOOK
+  chmod +x "$hook"
+  ok "hook instalado: a partir de agora 'git pull' já reinicia o serviço"
+}
+
 main() {
   check_preconditions
   ensure_node
@@ -764,6 +830,7 @@ main() {
   ensure_timezone
   ensure_systemd_units
   ensure_power_settings
+  ensure_git_pull_hook
 
   step "Diagnóstico final"
   if [ "$DRY_RUN" -eq 1 ]; then

@@ -68,7 +68,12 @@ import { getMonthKey } from '../domain/month'
 import { consolidateMonth } from '../domain/monthly-closing'
 import { createDemoDatabase } from './demo-seed'
 
-const DEFAULT_STORAGE_KEY = 'motoclub:bar-database'
+/**
+ * Exportada porque o servidor precisa saber se o documento já existe antes de
+ * decidir semear (ver `server/main.ts`). Enquanto era detalhe interno, quem
+ * quisesse essa resposta teria de repetir a string.
+ */
+export const DEFAULT_STORAGE_KEY = 'motoclub:bar-database'
 const INVALID_DATA_MESSAGE = 'Stored bar data is structurally invalid'
 const INACTIVE_EVENT_MESSAGE = 'Event must be active'
 const EXCESSIVE_PAYMENT_MESSAGE = 'Payment cannot exceed the amount due'

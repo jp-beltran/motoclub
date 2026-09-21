@@ -4,7 +4,11 @@ import http from 'node:http'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import type { BarRepository } from '../src/features/bar/application/bar-repository'
-import { LocalBarRepository } from '../src/features/bar/infrastructure/local-bar-repository'
+import {
+  DEFAULT_STORAGE_KEY,
+  LocalBarRepository,
+} from '../src/features/bar/infrastructure/local-bar-repository'
+import { createEmptyDatabase } from '../src/features/bar/infrastructure/empty-database'
 import {
   assertForeignKeysEnabled,
   assertIntegrityOk,
@@ -98,11 +102,37 @@ async function openDatabase(config: ServerConfig): Promise<SqlDriver> {
  * piece underneath.
  */
 function buildRepository(driver: SqlDriver): BarRepository {
+  const storage = new SqliteStorage(driver)
+  seedEmptyIfAbsent(storage)
   return new LocalBarRepository({
-    storage: new SqliteStorage(driver),
+    storage,
     nextId: () => randomUUID(),
     now: () => new Date().toISOString(),
   })
+}
+
+/**
+ * Uma instalação nova nasce VAZIA, não com a demonstração.
+ *
+ * `LocalBarRepository.load` semeia `createDemoDatabase()` quando o
+ * armazenamento devolve `null`, o que é o certo para quem desenvolve e o
+ * errado para o bar: o operador abriria o sistema no primeiro dia e veria
+ * Ana Paula, Bruno Santos e quatro lançamentos que nunca aconteceram — e
+ * lançar uma cerveja no integrante de mentira é fácil demais.
+ *
+ * Gravando o documento vazio aqui, antes de o repositório existir, o ramo que
+ * semeia nunca é alcançado no servidor. A demonstração continua a um clique
+ * em desenvolvimento (`resetDemo`), que é onde ela serve.
+ *
+ * Idempotente de propósito: só escreve quando não há documento nenhum, então
+ * reiniciar o serviço não toca no banco do clube.
+ */
+function seedEmptyIfAbsent(storage: SqliteStorage): void {
+  if (storage.getItem(DEFAULT_STORAGE_KEY) !== null) return
+  storage.setItem(
+    DEFAULT_STORAGE_KEY,
+    JSON.stringify({ version: 1, data: createEmptyDatabase() }),
+  )
 }
 
 function sendJson(res: http.ServerResponse, status: number, body: unknown): void {
