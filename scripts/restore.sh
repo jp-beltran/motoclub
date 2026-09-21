@@ -170,8 +170,20 @@ collect_backups() {
     base="$(basename "$f")"
     size="$(stat -c%s "$f" 2>/dev/null || echo 0)"
     date_str="$(date -r "$f" '+%Y-%m-%d %H:%M' 2>/dev/null || echo "data desconhecida")"
+    # O conteúdo é conferido AQUI, na listagem, e não só depois da escolha.
+    # Antes, o operador escolhia um número e só então descobria que aquele
+    # arquivo não servia — e a mensagem não dizia quais serviam. Num pendrive
+    # com backups de épocas diferentes isso vira tentativa e erro, justamente
+    # na noite em que ele precisa restaurar rápido.
+    local conteudo estado
+    conteudo="$(check_bar_document "$f" 2>/dev/null)" || conteudo="FALHOU: sem o documento do bar"
+    case "$conteudo" in
+      FALHOU:*) estado="  ⚠ NÃO SERVE: ${conteudo#FALHOU: }" ;;
+      VAZIO:*)  estado="  (bar vazio)" ;;
+      *)        estado="  ${conteudo#OK: }" ;;
+    esac
     CANDIDATE_PATHS+=("$f")
-    CANDIDATE_LABELS+=("$label_prefix$base — $date_str — $(human_size "$size")")
+    CANDIDATE_LABELS+=("$label_prefix$base — $date_str — $(human_size "$size")$estado")
   done < <(find "$dir" -maxdepth 1 -type f -name 'bar-*.sqlite3' -print0 | sort -z -r)
 }
 
