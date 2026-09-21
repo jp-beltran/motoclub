@@ -17,10 +17,37 @@ function tmpDir() {
   return mkdtempSync(path.join(tmpdir(), 'motoclub-backup-test-'));
 }
 
+/**
+ * A fixture guarda o DOCUMENTO DO BAR de verdade, e não um par chave/valor
+ * qualquer, porque o backup agora exige que ele esteja lá: um arquivo íntegro
+ * e sem documento é um backup que, ao ser restaurado, faz o sistema recriar a
+ * demonstração — foi o que apareceu no pendrive do clube em 21/09/2026.
+ *
+ * Um par 'a'/'b' passava na verificação antiga (só integrity_check) e não
+ * passa na nova, com razão: ele não descreve nenhum banco que este sistema
+ * produza.
+ */
 function makeDb(dbPath) {
   const db = new DatabaseSync(dbPath);
   db.exec('CREATE TABLE kv (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL)');
-  db.prepare('INSERT INTO kv VALUES (?, ?, ?)').run('a', 'b', 'c');
+  db.prepare('INSERT INTO kv VALUES (?, ?, ?)').run(
+    'motoclub:bar-database',
+    JSON.stringify({
+      version: 1,
+      data: {
+        consumers: [{ id: 'c1' }],
+        items: [{ id: 'i1' }],
+        events: [],
+        tabs: [],
+        consumptions: [{ id: 'x1' }],
+        payments: [],
+        stockMovements: [],
+        monthlyClosings: [],
+        memberStatements: [],
+      },
+    }),
+    new Date().toISOString(),
+  );
   db.close();
 }
 

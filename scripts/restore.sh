@@ -84,6 +84,23 @@ check_integrity() {
   "$NODE_BIN" --no-warnings "$SCRIPT_DIR/lib/sqlite-check.mjs" "$1"
 }
 
+# "É um SQLite íntegro?" e "os dados do bar estão aqui?" são perguntas
+# diferentes, e só a segunda importa para quem está restaurando. No pendrive
+# do clube havia um backup que passava na primeira e falhava na segunda:
+# íntegro, e com a tabela kv vazia. Restaurá-lo devolveria um banco sem
+# documento — e o sistema, ao encontrar o armazenamento vazio, recria a
+# demonstração. O operador restauraria "o backup" numa noite ruim e receberia
+# dados de mentira, sem um único erro na tela.
+check_bar_document() {
+  "$NODE_BIN" --no-warnings -e '
+    import("'"$SCRIPT_DIR"'/lib/backup-content.mjs").then(({ checkBarDocument, descreverResumo }) => {
+      const r = checkBarDocument(process.argv[1]);
+      if (!r.ok) { console.log("FALHOU: " + r.detail); process.exit(1); }
+      console.log((r.vazio ? "VAZIO: " : "OK: ") + descreverResumo(r.resumo));
+    });
+  ' "$1"
+}
+
 # --- config: variáveis de ambiente e valores padrão -----------------------
 
 # Lê uma variável do arquivo de env SEM interpretá-lo como shell script
@@ -223,6 +240,23 @@ verify_chosen_backup() {
     echo "Nada foi alterado. Escolha outro backup." >&2
     exit 3
   fi
+
+  info "Conferindo se os dados do bar estão realmente dentro do backup..."
+  local content_output content_ok
+  content_output="$(check_bar_document "$CHOSEN_PATH")" && content_ok=1 || content_ok=0
+  if [ "$content_ok" -ne 1 ]; then
+    fail "este backup não serve: $content_output"
+    echo "Nada foi alterado. Escolha outro backup." >&2
+    exit 3
+  fi
+  case "$content_output" in
+    VAZIO:*)
+      ok "integridade e conteúdo conferidos — atenção: este backup é de um BAR VAZIO (${content_output#VAZIO: })"
+      ;;
+    *)
+      ok "conteúdo conferido: ${content_output#OK: }"
+      ;;
+  esac
   # "integrity_check = ok" prova que o ARQUIVO não está corrompido — não
   # prova que os dados são os que você espera encontrar (isso só se
   # confere olhando a tela do app depois).
