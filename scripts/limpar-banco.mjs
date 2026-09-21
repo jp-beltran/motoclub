@@ -21,7 +21,7 @@
 // com a data no nome. Limpar é irreversível para quem não tem a cópia.
 import { carregarSqlite } from './lib/node-sqlite.mjs'
 import { createInterface } from 'node:readline/promises'
-import { existsSync, copyFileSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import path from 'node:path'
 
@@ -159,8 +159,15 @@ Deixa o banco do bar vazio, guardando antes uma cópia do atual ao lado.`)
 
   const carimbo = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15)
   const copia = `${dbPath}.antes-de-limpar-${carimbo}`
+
+  // `VACUUM INTO`, nunca `copyFileSync`: é a mesma regra que o backup.mjs
+  // segue, e pelo mesmo motivo. Em modo WAL os commits recentes moram no
+  // arquivo -wal ao lado, e uma cópia crua do .sqlite3 os perde em silêncio —
+  // medido: uma cópia crua feita com o WAL pendente sai sem sequer a tabela.
+  // Esta cópia é a única rede embaixo de quem está prestes a apagar tudo;
+  // fazê-la do jeito que perde dado seria pior que não fazer.
+  conexao.prepare('VACUUM INTO ?').run(copia)
   conexao.close()
-  copyFileSync(dbPath, copia)
   console.log(`Cópia do banco atual: ${copia}`)
 
   const escrita = new DatabaseSync(dbPath)
