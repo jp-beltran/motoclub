@@ -22,6 +22,7 @@ import { mkdirSync, readdirSync, statSync, unlinkSync, copyFileSync, existsSync,
 import path from 'node:path';
 import os from 'node:os';
 import { planPruning, parseBackupDate, formatBackupName } from './lib/prune-backups.mjs';
+import { checkBarDocument, descreverResumo } from './lib/backup-content.mjs';
 import { checkIntegrity } from './lib/sqlite-check.mjs';
 
 function parseArgs(argv) {
@@ -122,6 +123,23 @@ async function main() {
     return;
   }
 
+  // integrity_check disse "é um SQLite íntegro". Falta a outra pergunta, que
+  // é a que interessa a quem restaura: "os dados do bar estão aqui?". Um
+  // arquivo íntegro e SEM documento existe de verdade — apareceu no pendrive
+  // do clube — e restaurá-lo faria o sistema recriar a demonstração sem
+  // avisar ninguém.
+  const conteudo = checkBarDocument(destPath);
+  if (!conteudo.ok) {
+    try {
+      unlinkSync(destPath);
+    } catch {
+      // segue o erro principal mesmo se a remoção falhar
+    }
+    process.stderr.write(`ERRO: ${conteudo.detail} — backup descartado\n`);
+    process.exitCode = 1;
+    return;
+  }
+
   // Poda: recalcula com o arquivo real já no disco.
   const allBackups = listExistingBackups(backupDir);
   const { remove: toRemove } = planPruning(allBackups, { dailyCount: 14, weeklyCount: 8 });
@@ -150,9 +168,14 @@ async function main() {
         // buscado no dia em que o disco interno morrer — vale conferir
         // que chegou inteiro, não só que a chamada não lançou erro.
         const usbCheck = checkIntegrity(usbDestPath);
-        if (!usbCheck.ok) {
+        const usbConteudo = usbCheck.ok
+          ? checkBarDocument(usbDestPath)
+          : { ok: false, detail: '' };
+        if (!usbCheck.ok || !usbConteudo.ok) {
           usbOk = false;
-          usbNote = `FALHOU: cópia no pendrive não passou no integrity_check (${usbCheck.detail})`;
+          usbNote = usbCheck.ok
+            ? `FALHOU: a cópia no pendrive perdeu o documento do bar (${usbConteudo.detail})`
+            : `FALHOU: cópia no pendrive não passou no integrity_check (${usbCheck.detail})`;
           try {
             unlinkSync(usbDestPath);
           } catch {
@@ -187,7 +210,13 @@ async function main() {
 
   const size = statSync(destPath).size;
   const elapsedMs = Date.now() - startedAt;
-  const summary = `${backupName} (${formatBytes(size)}, integrity_check=ok, podados ${toRemove.length}, ${usbNote}, ${elapsedMs}ms)`;
+  // O resumo do CONTEÚDO vai na linha de sucesso de propósito: é o que faz
+  // um backup vazio saltar aos olhos de quem lê o log ou o journalctl. Dizer
+  // só "integrity_check=ok" foi exatamente o que deixou passar, no pendrive do
+  // clube, um arquivo íntegro e sem nada dentro.
+  const conteudoResumo = descreverResumo(conteudo.resumo)
+    + (conteudo.vazio ? ' — BAR VAZIO' : '');
+  const summary = `${backupName} (${formatBytes(size)}, integrity_check=ok, ${conteudoResumo}, podados ${toRemove.length}, ${usbNote}, ${elapsedMs}ms)`;
   if (usbOk) {
     console.log(`backup ok: ${summary}`);
   } else {
