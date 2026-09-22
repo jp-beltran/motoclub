@@ -416,11 +416,67 @@ prompt_usb_path() {
   printf '%s' "$path"
 }
 
+# Mostra o que está montado agora, para o operador não precisar descobrir o
+# caminho sozinho — foi justamente onde a reconfiguração emperrou na prática.
+sugerir_pendrives_montados() {
+  local achou=0
+  local ponto
+  while IFS= read -r ponto; do
+    [ -n "$ponto" ] || continue
+    [ "$achou" -eq 0 ] && say "  Mídias removíveis montadas agora:"
+    achou=1
+    say "    $ponto"
+  done < <(lsblk -rno RM,MOUNTPOINT 2>/dev/null | awk '$1==1 && $2!="" {print $2}')
+  [ "$achou" -eq 1 ] || say "  (nenhuma mídia removível montada — espete o pendrive antes de responder)"
+}
+
 ensure_usb_config_update_only() {
   local existing
   existing="$(env_file_var "$ENV_FILE" BAR_BACKUP_USB_PATH)"
   if [ -n "$existing" ]; then
-    ok "pendrive de backup já configurado: $existing"
+    # "Tem valor" não é "está certo". O ponto de montagem de um pendrive
+    # depende do rótulo do sistema de arquivos, então reformatar ou trocar de
+    # pendrive muda o caminho — e o valor antigo continua ali, parecendo
+    # configuração boa. Enquanto esta função só olhava se a variável existia,
+    # rodar o instalador de novo não consertava nada, e o backup seguia
+    # falhando toda noite por um caminho que não existe mais.
+    if [ -d "$existing" ] && [ -w "$existing" ]; then
+      ok "pendrive de backup já configurado: $existing"
+      return 0
+    fi
+    warn "o pendrive configurado não está acessível: $existing"
+    if [ -d "$existing" ]; then
+      warn "(a pasta existe, mas não é gravável — o pendrive pode ter sido montado somente-leitura)"
+    else
+      warn "(a pasta não existe — o pendrive foi trocado, reformatado ou está desconectado)"
+    fi
+    if [ "$DRY_RUN" -eq 1 ]; then
+      info "[dry-run] perguntaria um caminho novo e substituiria BAR_BACKUP_USB_PATH em $ENV_FILE"
+      return 0
+    fi
+    sugerir_pendrives_montados
+    local novo
+    novo="$(prompt_usb_path)"
+    if [ -z "$novo" ]; then
+      warn "pendrive NÃO reconfigurado — os backups vão continuar só no HD interno."
+      return 0
+    fi
+    # Reescreve a linha em vez de acrescentar outra: duas linhas com a mesma
+    # variável fariam o systemd valer a última e o leitor de texto também,
+    # mas deixariam o arquivo dizendo duas coisas para quem abrir.
+    local linha
+    linha="$(env_file_line BAR_BACKUP_USB_PATH "$novo")" || {
+      warn "caminho recusado (contém apóstrofo) — pendrive não reconfigurado."
+      return 0
+    }
+    local tmp
+    tmp="$(mktemp)"
+    grep -v '^BAR_BACKUP_USB_PATH=' "$ENV_FILE" > "$tmp" || true
+    printf '%s\n' "$linha" >> "$tmp"
+    cat "$tmp" > "$ENV_FILE"
+    rm -f "$tmp"
+    chmod 600 "$ENV_FILE"
+    ok "pendrive reconfigurado: $novo"
     return 0
   fi
 
